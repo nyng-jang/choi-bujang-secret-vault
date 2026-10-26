@@ -42,6 +42,7 @@ export async function runAttackChecks(config) {
       observed: visible ? '비로그인 요청에서 공개 가상 메모 확인 표시가 보임' : `비로그인 요청에서 확인 표시가 보이지 않음 (HTTP ${status})` }];
   }
   if (config.step === 3) return loginChecks(config);
+  if (config.step === 4) return ownerChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   const oldFile = await anonymousGet(app, '/data.json');
@@ -99,5 +100,41 @@ async function loginChecks(config) {
       observed: result(remove) },
     { attackId: 'logged_in_note_crud', expected: 'A 계정은 내 메모 목록을 보고 POST·PUT·DELETE로 추가·수정·삭제하며, 지운 메모의 GET은 404',
       observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 화면에서 직접 확인' },
+  ];
+}
+
+// Stage 4: the stage 3 checks still hold, and the notes table refuses the
+// anon role even when someone calls the Supabase Data API directly with the
+// publishable key the browser already receives from /login-config.json.
+async function ownerChecks(config) {
+  const checks = (await loginChecks(config)).filter(item => item.attackId !== 'logged_in_note_crud');
+  const app = appUrl(config);
+  const login = await anonymousGet(app, '/login-config.json');
+  const key = login.data?.publishableKey;
+  const dataApi = new URL('/rest/v1/notes', new URL(config.identityProvider.issuer).origin);
+  let read = null;
+  let write = null;
+  if (typeof key === 'string' && key.startsWith('sb_publishable_')) {
+    const headers = { apikey: key };
+    read = await anonymousGet(dataApi, `${dataApi.pathname}?select=public_id`, { headers });
+    write = await anonymousGet(dataApi, dataApi.pathname, {
+      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ title: 'anon 직접 추가 시도', content: '거절되어야 함' }),
+    });
+  }
+  const result = res => res === null
+    ? `미실행: /login-config.json에서 공개용 키를 받지 못함 (HTTP ${login.status})`
+    : `HTTP ${res.status}, 메모 ${noteCount(res.data)}건, 오류 코드 ${typeof res.data?.code === 'string' ? res.data.code : '없음'}`
+      + (SECRET_LIKE.test(res.text) ? ', 응답에 키 형태 값 있음' : '');
+  return [
+    ...checks,
+    { attackId: 'anon_data_api_notes_read', expected: '공개용 키(anon)로 Data API의 notes를 직접 읽으면 권한 없음(42501), 메모 0건',
+      observed: result(read) },
+    { attackId: 'anon_data_api_notes_insert', expected: '공개용 키(anon)로 Data API의 notes에 직접 추가하면 권한 없음(42501), 추가되지 않음',
+      observed: result(write) },
+    { attackId: 'logged_in_own_note_crud', expected: 'A·B 각자 내 메모 목록을 보고 POST·PUT·DELETE로 추가·수정·삭제하며, 지운 메모의 GET은 404',
+      observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 화면에서 직접 확인' },
+    { attackId: 'cross_owner_note_access', expected: 'B 토큰으로 A 메모 id에 GET·PUT·DELETE하면 모두 403 NOTE_FORBIDDEN, A 메모는 그대로',
+      observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 브라우저 Console에서 직접 확인' },
   ];
 }

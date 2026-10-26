@@ -8,7 +8,7 @@
 2. 방어전 1단계 카드의 **Deploy** 버튼을 누릅니다. Vercel에 GitHub로 로그인하고, 새 저장소가 **본인 계정의 Public 저장소**인지 확인한 뒤 Deploy를 누릅니다.
 3. 배포가 끝나면 화면에 나온 `https://…vercel.app` 주소를 방어전 1단계 카드에 붙여넣고 제출합니다. 저장소 주소나 설정 파일은 적지 않습니다.
 
-배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 3단계」를, 지난 단계 기록은 「2단계 기록」을 보세요.
+배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 4단계」를, 지난 단계 기록은 「3단계 기록」과 「2단계 기록」을 보세요.
 
 ## 시작 틀의 자동 처리
 
@@ -16,7 +16,7 @@
 
 `aleph.config.json`의 `repoUrl`과 `publicAppUrl`은 1단계 시작 틀에서는 자리표시자였고, 학생이 편집하지 않았습니다. 2단계 저장점(`f53f2cb`)에서 실제 저장소·프로덕션 주소로 채웠습니다. 2단계 이후 코딩 도구가 필요한 설정과 보호 기능을 단계별로 작성합니다. `npm run bundle`과 `bundle-notes.json`도 1단계의 세 걸음에는 포함되지 않습니다.
 
-로컬에서 빌드만 확인할 때는 `npm run build -- --local`을 사용합니다. 로컬 실행은 Vercel 배포나 심판 접수를 증명하지 않습니다. 저장소의 `src/attack-check.mjs`는 `npm run bundle`이 실행하는 자기 점검입니다. 3단계에서는 실제 배포에 `/data.json`(메모가 없어야 함), 토큰 없는 `/api/notes` 읽기·추가와 `/api/notes/:id` 삭제, 서명 없는 가짜 토큰 읽기를 요청해 상태 코드와 건수만 기록합니다. 모두 401이어야 정상입니다. 로그인한 상태의 읽기·추가·수정·삭제는 비밀번호나 토큰을 쓰지 않기 위해 자동 점검에서 빼고 「미실행」으로 남깁니다.
+로컬에서 빌드만 확인할 때는 `npm run build -- --local`을 사용합니다. 로컬 실행은 Vercel 배포나 심판 접수를 증명하지 않습니다. 저장소의 `src/attack-check.mjs`는 `npm run bundle`이 실행하는 자기 점검입니다. 4단계에서는 실제 배포에 `/data.json`(메모가 없어야 함), 토큰 없는 `/api/notes` 읽기·추가와 `/api/notes/:id` 삭제, 서명 없는 가짜 토큰 읽기를 요청하고(모두 401이어야 정상), 배포의 `/login-config.json`에 있는 공개용 키(anon)로 Supabase Data API의 `notes`를 직접 읽기·추가해(권한 없음 42501이어야 정상) 상태 코드와 건수만 기록합니다. 로그인한 상태의 내 메모 읽기·추가·수정·삭제와 B→A 메모 접근은 비밀번호나 토큰을 쓰지 않기 위해 자동 점검에서 빼고 「미실행」으로 남깁니다.
 
 ## 다음 단계의 코딩 도구에 전달할 규칙
 
@@ -24,7 +24,18 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
-## 현재 단계: 3단계 「진짜 로그인을 붙입니다」
+## 현재 단계: 4단계 「로그인해도 내 자료만 보이게 합니다」
+
+- 메모 주인 정리: 처음 가상 메모 네 건은 A 계정, 공개 가능한 시험 메모 「B 시험 메모」 한 건은 B 계정 소유입니다. 소유자는 이메일로 `auth.users`에서 ID를 찾는 학습용 SQL로 맞췄습니다(SQL은 메모 문장이 있어 Git에 올리지 않음).
+- 앱 API(`api/notes.js`, 커밋 `f019db3`): 주인은 언제나 서버가 검증한 토큰의 사용자 ID이고, URL·본문의 `owner_id`는 믿지 않습니다(본문에 있으면 400). `GET·PUT·DELETE /api/notes/:id`는 DB의 `owner_id`와 비교해 없으면 404 `NOTE_NOT_FOUND`, 남의 메모면 403 `NOTE_FORBIDDEN`으로 기본 거부합니다. 추가는 토큰 ID로 저장하고, 수정은 기존 행과 바뀐 행이 모두 내 것인지, 삭제는 내 행인지 `owner_id` 조건으로 확인합니다. 한 건 응답 `{id,title,body}`와 수정 본문 `{title,body}`는 3단계와 같습니다.
+- DB(`public.notes`만): `PUBLIC`·`anon`·`authenticated` 권한을 모두 회수한 뒤 `authenticated`에만 SELECT·INSERT·UPDATE·DELETE를 주었습니다. RLS 정책 네 개가 모두 `auth.uid() = owner_id`일 때만 허용합니다(SELECT·DELETE는 기존 행 USING, INSERT는 새 행 WITH CHECK, UPDATE는 둘 다). `anon`에는 권한이 없습니다. 앱 API는 서버 전용 키(service_role, RLS를 건너뜀)를 쓰므로 앱의 주인 확인은 API가 하고, RLS는 Data API로 직접 들어오는 길을 막는 두 번째 벽입니다. 심판이 재현할 수 없는 `authenticated` 역할의 직접 접근은 점수 확인에서 뺍니다.
+- `aleph.config.json`: `step` 4. `identityProvider`, `allowedRoutes`(다섯 경로), `judgeIssuer`는 3단계와 같고, `originalApiUrl`·`restoreRoute`는 5단계 전이라 비어 있습니다. `src/decider.mjs`의 `RULE_IDS`는 `starter.deny` 하나뿐입니다. 로그아웃 상태의 JSON 401, `/aleph.json`, `X-Content-Type-Options: nosniff`는 그대로입니다.
+- 실제 배포·DB에서 학생이 직접 확인한 것(2026-10-26): B 토큰으로 A 메모 id에 `GET·PUT·DELETE` → 모두 403, A 메모는 그대로. A·B 각자 화면에서 내 메모 추가·수정·삭제 동작. 공개용 키로 Data API `notes` 직접 읽기 → 401 `42501 permission denied for table notes`. 적용 후 `information_schema.role_table_grants`·`has_table_privilege` 대조에서 `anon`은 권한 없음, `authenticated`는 SELECT·INSERT·UPDATE·DELETE만.
+- 자기 점검(`src/attack-check.mjs`) 9개: 3단계의 비로그인·가짜 토큰 점검 5개, 공개용 키로 Data API 직접 읽기·추가 2개, 로그인한 내 메모 CRUD와 B→A 접근 2개(토큰을 쓰지 않으므로 「미실행」).
+- 다시 실행: Supabase SQL Editor에서 소유자 정리 SQL, `notes_rls.sql`(권한·RLS), `notes_grants_check.sql`(권한 대조)을 차례로 실행하고(셋 다 Git에 올리지 않음), Vercel에 다시 배포합니다. PC의 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `git pull && npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.
+- 해결 안 된 시험과 약점: `npm run test:package`는 `api/notes.js`가 `package/baseline-functions.json`에 없어서 계속 실패합니다. Supabase의 「Allow new users to sign up」이 켜져 있으면 공개용 키로 누구나 계정을 만들 수 있으니 끄는 것을 권합니다. 2단계에 적은 옛 공개 커밋·옛 배포 문제도 그대로입니다.
+
+## 3단계 기록 「진짜 로그인을 붙입니다」
 
 - 화면(`/`)에서 Supabase Auth의 이메일·비밀번호로 로그인하고 로그아웃합니다. 로그인하면 가상 메모 목록이 보이고, 메모를 추가·수정·삭제할 수 있습니다. 로그인 전에는 `/api/notes`를 부르지 않고 「로그인하면 가상 메모가 보입니다」만 보입니다.
 - 서버 함수 `api/notes.js`는 모든 요청에서 `Authorization: Bearer <토큰>`을 틀의 `src/verify-login.mjs`(고치지 않음)로 검증합니다. 학생 토큰은 Supabase `auth.getClaims`로 서명·발급자·대상(`authenticated`)·만료를 확인하고, 심판 토큰은 `judgeIssuer`의 공개키로 확인합니다. 토큰이 없거나 검증에 실패하면 자료 없이 401 `LOGIN_REQUIRED`입니다. 토큰 내용을 서버가 직접 풀어서 믿지 않습니다.
@@ -36,7 +47,7 @@
   - `DELETE /api/notes/:id`: 지우고 `{id}`를 돌려줍니다.
 - 새 메모의 `owner_id`는 요청 본문이 아니라 서버가 검증한 토큰의 사용자 ID로 채웁니다. 본문에는 위의 칸만 받고(`title` 1~100자, `body` 2000자 이하), `userId`·`role`·`owner_id` 같은 다른 칸이 있으면 400입니다. API의 `id`는 DB의 `public_id`(UUID) 칸이고, `body`는 DB의 `content` 칸입니다. 처음 가상 메모 네 건은 A 계정 소유로 옮겼습니다.
 - 브라우저에는 프로젝트 주소와 공개용 `SUPABASE_PUBLISHABLE_KEY`만 줍니다. 빌드가 이 두 값으로 `public/login-config.json`을 만들고, Supabase 브라우저 라이브러리는 `package-lock.json`에 고정된 판을 `public/vendor/supabase.js`로 복사합니다(둘 다 Git에는 올리지 않음). `sb_publishable_`로 시작하지 않는 키는 빌드가 거부합니다. 서버 전용 `SUPABASE_SECRET_KEY`는 서버 함수에서만 씁니다.
-- `aleph.config.json`: `step` 3, `identityProvider`는 Supabase Auth 발급자 `https://kvzvodzkgrwavncezuiw.supabase.co/auth/v1`, 공개키 주소 `…/auth/v1/.well-known/jwks.json`, 대상 `authenticated`입니다. `allowedRoutes`는 위 다섯 경로(`GET /api/notes`, `POST /api/notes`, `GET /api/notes/:id`, `PUT /api/notes/:id`, `DELETE /api/notes/:id`)입니다. `SUPABASE_URL`이 이 발급자와 다른 프로젝트면 빌드와 `/api/notes`(500 `NOTES_NOT_CONFIGURED`)가 모두 실패합니다.
+- `aleph.config.json`(3단계 당시): `step` 3, `identityProvider`는 Supabase Auth 발급자 `https://kvzvodzkgrwavncezuiw.supabase.co/auth/v1`, 공개키 주소 `…/auth/v1/.well-known/jwks.json`, 대상 `authenticated`입니다. `allowedRoutes`는 위 다섯 경로(`GET /api/notes`, `POST /api/notes`, `GET /api/notes/:id`, `PUT /api/notes/:id`, `DELETE /api/notes/:id`)입니다. `SUPABASE_URL`이 이 발급자와 다른 프로젝트면 빌드와 `/api/notes`(500 `NOTES_NOT_CONFIGURED`)가 모두 실패합니다.
 - 보안 헤더 `X-Content-Type-Options: nosniff`는 2단계와 같이 모든 응답에 붙습니다. `vercel.json`은 `api/notes.js`가 `aleph.config.json`을 읽을 수 있게 함께 배포합니다.
 - 다시 실행: Vercel 환경변수 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_PUBLISHABLE_KEY` 세 개를 넣고, Supabase Authentication > Users > Add user에서 「Auto Confirm User」로 연습용 계정 A·B를 만들고, SQL Editor에서 `public_id` 칸 추가와 가상 메모 네 건의 A 소유 이전 SQL(Git에 올리지 않음)을 실행한 뒤 다시 배포합니다. 정상이면 로그인 전에는 메모가 안 보이고, A로 로그인하면 내 메모가 보이며 추가·수정·삭제가 되고, 지운 메모의 `GET /api/notes/:id`는 404입니다. `curl -s -o /dev/null -w "%{http_code}\n" "https://<배포주소>/api/notes?cb=$(date +%s)"`는 401이어야 정상입니다.
 
@@ -48,17 +59,9 @@
 - 다시 실행: PC의 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `git pull && npm run bundle`을 실행합니다. 결과는 `artifacts/submission.json`(커밋하지 않음)입니다.
 - 해결 안 된 시험: `npm run test:package`는 2단계부터 `api/notes.js`가 시작 틀 기준표 `package/baseline-functions.json`에 없어서 실패합니다. 기준표를 고칠지는 아직 정하지 않았습니다.
 
-### 4단계 진행: API의 메모 주인 확인
+### 3단계 당시 알려진 약점 (4단계에서 주인 확인으로 막음)
 
-- `api/notes.js`는 서버가 검증한 토큰의 사용자 ID만 주인으로 씁니다. URL이나 본문의 `owner_id`·`userId`는 믿지 않고, 본문에 있으면 400입니다.
-- `GET·PUT·DELETE /api/notes/:id`는 먼저 그 메모를 찾아 DB의 `owner_id`와 비교합니다. 없는 메모는 404 `NOTE_NOT_FOUND`, 다른 계정의 메모는 403 `NOTE_FORBIDDEN`이며 내용을 돌려주지 않습니다(기본 거부).
-- 추가는 `owner_id`를 토큰의 사용자 ID로 저장합니다. 수정은 기존 행이 내 것일 때만(`owner_id` 조건) 바꾸고, 바뀐 행의 `owner_id`도 내 ID인지 다시 확인합니다. 삭제도 `owner_id` 조건을 붙여 내 메모만 지웁니다. 한 건 응답 `{id,title,body}`와 수정 본문 `{title,body}`는 그대로입니다.
-- `allowedRoutes`는 실제로 받는 다섯 경로(`GET /api/notes`, `POST /api/notes`, `GET /api/notes/:id`, `PUT /api/notes/:id`, `DELETE /api/notes/:id`) 그대로이며, 이 밖의 메서드는 405입니다.
-- 정상: A·B 모두 자기 메모 읽기·추가·수정·삭제가 됩니다. 거부: B가 A 메모 `id`로 `GET·PUT·DELETE`하면 403, 본문에 `owner_id`를 넣으면 400, 남의 메모 `id`로 `POST`하면 409입니다.
-
-### 남은 약점 (4단계 다음 요청에서 막을 것)
-
-API는 주인을 확인하지만, DB 쪽은 아직 2단계 설정(RLS 켬, 정책 없음, `anon`·`authenticated` 권한 회수)만 있습니다. 본인 행만 허용하는 GRANT·RLS 정책은 다음 요청에서 설계합니다. 또 화면에는 회원가입 버튼이 없지만, Supabase 프로젝트의 공개 회원가입 설정이 켜져 있으면 공개용 키로 누구나 계정을 만들 수 있으므로, Authentication > Sign In / Providers의 「Allow new users to sign up」을 끄면 대시보드에서 만든 계정만 로그인합니다. 2단계에 적은 옛 공개 커밋·옛 배포 문제도 그대로입니다.
+3단계의 로그인은 **누가** 요청했는지만 확인했습니다. 목록에는 내 메모만 나왔지만 `GET·PUT·DELETE /api/notes/:id`는 주인을 확인하지 않아, B 계정이 A 메모의 `id`를 알면 읽고 고치고 지울 수 있었습니다.
 
 ## 2단계 기록 「자료를 코드 밖으로 옮깁니다」
 

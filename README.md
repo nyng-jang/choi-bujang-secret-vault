@@ -40,6 +40,14 @@
 - 보안 헤더 `X-Content-Type-Options: nosniff`는 2단계와 같이 모든 응답에 붙습니다. `vercel.json`은 `api/notes.js`가 `aleph.config.json`을 읽을 수 있게 함께 배포합니다.
 - 다시 실행: Vercel 환경변수 `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `SUPABASE_PUBLISHABLE_KEY` 세 개를 넣고, Supabase Authentication > Users > Add user에서 「Auto Confirm User」로 연습용 계정 A·B를 만들고, SQL Editor에서 `public_id` 칸 추가와 가상 메모 네 건의 A 소유 이전 SQL(Git에 올리지 않음)을 실행한 뒤 다시 배포합니다. 정상이면 로그인 전에는 메모가 안 보이고, A로 로그인하면 내 메모가 보이며 추가·수정·삭제가 되고, 지운 메모의 `GET /api/notes/:id`는 404입니다. `curl -s -o /dev/null -w "%{http_code}\n" "https://<배포주소>/api/notes?cb=$(date +%s)"`는 401이어야 정상입니다.
 
+### 3단계 저장점 (2026-10-26)
+
+- 실제 배포에서 학생이 직접 확인한 것: 토큰 없는 `GET /api/notes`와 `DELETE /api/notes/:id`는 401 `LOGIN_REQUIRED`, A 계정 로그인·로그아웃 뒤 화면 상태가 바뀜, 틀린 비밀번호는 「이메일 또는 비밀번호가 맞지 않습니다」로 거절, A의 메모 추가·수정·삭제 동작.
+- 설정 대조: `aleph.config.json`의 `step` 3은 빌드가 만드는 `/aleph.json`과 같고, `publicAppUrl`은 프로덕션 주소입니다. `identityProvider`는 `api/notes.js`가 `src/verify-login.mjs`에 넘기는 Supabase 발급자·공개키 주소·대상이고, `allowedRoutes`는 `api/notes.js`와 `vercel.json`이 실제로 받는 다섯 경로입니다. `judgeIssuer`는 운영 측 값 그대로이고, `originalApiUrl`·`restoreRoute`는 5단계 전이라 비어 있습니다. `src/decider.mjs`의 `RULE_IDS`는 `decide()`가 실제로 쓰는 `starter.deny` 하나뿐입니다.
+- 자기 점검(`src/attack-check.mjs`) 6개: `/data.json` 메모 없음, 토큰 없는 목록 읽기·추가·삭제 거부, 서명 없는 가짜 토큰 거부, 로그인 상태 추가·수정·삭제(비밀번호·토큰을 쓰지 않으므로 「미실행」).
+- 다시 실행: PC의 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `git pull && npm run bundle`을 실행합니다. 결과는 `artifacts/submission.json`(커밋하지 않음)입니다.
+- 해결 안 된 시험: `npm run test:package`는 2단계부터 `api/notes.js`가 시작 틀 기준표 `package/baseline-functions.json`에 없어서 실패합니다. 기준표를 고칠지는 아직 정하지 않았습니다.
+
 ### 알려진 약점 (4단계에서 막을 것)
 
 로그인은 **누가** 요청했는지만 확인합니다. 목록 `GET /api/notes`에는 내 메모만 나오지만, `GET·PUT·DELETE /api/notes/:id`는 주인을 확인하지 않습니다. 그래서 B 계정이 A 메모의 `id`를 알면 읽고 고치고 지울 수 있습니다. 메모 주인 확인(타인 자료 접근 차단)과 B의 타인 메모 접근 기록은 4단계에서 합니다. 또 화면에는 회원가입 버튼이 없지만, Supabase 프로젝트의 공개 회원가입 설정이 켜져 있으면 공개용 키로 누구나 계정을 만들 수 있으므로, Authentication > Sign In / Providers의 「Allow new users to sign up」을 끄면 대시보드에서 만든 계정만 로그인합니다. 2단계에 적은 옛 공개 커밋·옛 배포 문제도 그대로입니다.

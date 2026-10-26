@@ -147,6 +147,22 @@
       return loadNotes();
     }
 
+    // Supabase Auth가 돌려준 오류 코드로 실패 이유를 보여 줍니다.
+    // 이메일이 있는지 없는지는 Supabase도 구분해 주지 않으므로 묶어서 안내합니다.
+    const LOGIN_FAILURES = {
+      invalid_credentials: '이메일 또는 비밀번호가 맞지 않습니다.',
+      email_not_confirmed: '이메일 인증이 끝나지 않은 계정입니다. 대시보드에서 계정을 확인해 주세요.',
+      over_request_rate_limit: '로그인 시도가 너무 많습니다. 잠시 뒤 다시 시도해 주세요.',
+      over_email_send_rate_limit: '요청이 너무 많습니다. 잠시 뒤 다시 시도해 주세요.',
+      user_banned: '사용이 정지된 계정입니다.',
+      validation_failed: '이메일 형식을 확인해 주세요.',
+    };
+    function loginFailure(error) {
+      if (LOGIN_FAILURES[error.code]) return LOGIN_FAILURES[error.code];
+      if (error.name === 'AuthRetryableFetchError' || error.status === 0) return 'Supabase에 연결하지 못했습니다. 네트워크를 확인해 주세요.';
+      return `알 수 없는 오류입니다 (${error.code ?? error.status ?? '코드 없음'}).`;
+    }
+
     $('#login').addEventListener('submit', async event => {
       event.preventDefault();
       const form = event.currentTarget;
@@ -155,12 +171,12 @@
         email: form.elements.email.value.trim(), password: form.elements.password.value,
       });
       form.elements.password.value = '';
-      say(error ? '로그인하지 못했습니다. 이메일과 비밀번호를 확인해 주세요.' : '');
+      say(error ? `로그인하지 못했습니다: ${loginFailure(error)}` : '');
     });
 
     $('#logout').addEventListener('click', async () => {
-      await supabase.auth.signOut();
-      say('로그아웃했습니다.');
+      const { error } = await supabase.auth.signOut();
+      say(error ? `로그아웃하지 못했습니다 (${error.code ?? error.status ?? '코드 없음'}).` : '로그아웃했습니다.');
     });
 
     $('#add').addEventListener('submit', async event => {

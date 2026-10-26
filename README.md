@@ -48,9 +48,17 @@
 - 다시 실행: PC의 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `git pull && npm run bundle`을 실행합니다. 결과는 `artifacts/submission.json`(커밋하지 않음)입니다.
 - 해결 안 된 시험: `npm run test:package`는 2단계부터 `api/notes.js`가 시작 틀 기준표 `package/baseline-functions.json`에 없어서 실패합니다. 기준표를 고칠지는 아직 정하지 않았습니다.
 
-### 알려진 약점 (4단계에서 막을 것)
+### 4단계 진행: API의 메모 주인 확인
 
-로그인은 **누가** 요청했는지만 확인합니다. 목록 `GET /api/notes`에는 내 메모만 나오지만, `GET·PUT·DELETE /api/notes/:id`는 주인을 확인하지 않습니다. 그래서 B 계정이 A 메모의 `id`를 알면 읽고 고치고 지울 수 있습니다. 메모 주인 확인(타인 자료 접근 차단)과 B의 타인 메모 접근 기록은 4단계에서 합니다. 또 화면에는 회원가입 버튼이 없지만, Supabase 프로젝트의 공개 회원가입 설정이 켜져 있으면 공개용 키로 누구나 계정을 만들 수 있으므로, Authentication > Sign In / Providers의 「Allow new users to sign up」을 끄면 대시보드에서 만든 계정만 로그인합니다. 2단계에 적은 옛 공개 커밋·옛 배포 문제도 그대로입니다.
+- `api/notes.js`는 서버가 검증한 토큰의 사용자 ID만 주인으로 씁니다. URL이나 본문의 `owner_id`·`userId`는 믿지 않고, 본문에 있으면 400입니다.
+- `GET·PUT·DELETE /api/notes/:id`는 먼저 그 메모를 찾아 DB의 `owner_id`와 비교합니다. 없는 메모는 404 `NOTE_NOT_FOUND`, 다른 계정의 메모는 403 `NOTE_FORBIDDEN`이며 내용을 돌려주지 않습니다(기본 거부).
+- 추가는 `owner_id`를 토큰의 사용자 ID로 저장합니다. 수정은 기존 행이 내 것일 때만(`owner_id` 조건) 바꾸고, 바뀐 행의 `owner_id`도 내 ID인지 다시 확인합니다. 삭제도 `owner_id` 조건을 붙여 내 메모만 지웁니다. 한 건 응답 `{id,title,body}`와 수정 본문 `{title,body}`는 그대로입니다.
+- `allowedRoutes`는 실제로 받는 다섯 경로(`GET /api/notes`, `POST /api/notes`, `GET /api/notes/:id`, `PUT /api/notes/:id`, `DELETE /api/notes/:id`) 그대로이며, 이 밖의 메서드는 405입니다.
+- 정상: A·B 모두 자기 메모 읽기·추가·수정·삭제가 됩니다. 거부: B가 A 메모 `id`로 `GET·PUT·DELETE`하면 403, 본문에 `owner_id`를 넣으면 400, 남의 메모 `id`로 `POST`하면 409입니다.
+
+### 남은 약점 (4단계 다음 요청에서 막을 것)
+
+API는 주인을 확인하지만, DB 쪽은 아직 2단계 설정(RLS 켬, 정책 없음, `anon`·`authenticated` 권한 회수)만 있습니다. 본인 행만 허용하는 GRANT·RLS 정책은 다음 요청에서 설계합니다. 또 화면에는 회원가입 버튼이 없지만, Supabase 프로젝트의 공개 회원가입 설정이 켜져 있으면 공개용 키로 누구나 계정을 만들 수 있으므로, Authentication > Sign In / Providers의 「Allow new users to sign up」을 끄면 대시보드에서 만든 계정만 로그인합니다. 2단계에 적은 옛 공개 커밋·옛 배포 문제도 그대로입니다.
 
 ## 2단계 기록 「자료를 코드 밖으로 옮깁니다」
 

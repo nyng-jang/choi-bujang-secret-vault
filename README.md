@@ -16,7 +16,7 @@
 
 `aleph.config.json`의 `repoUrl`과 `publicAppUrl`은 이전 제출 묶음 방식의 자리표시자입니다. 1단계에서는 학생이 편집하지 않습니다. 2단계 이후 코딩 도구가 필요한 설정과 보호 기능을 단계별로 작성합니다. `npm run bundle`과 `bundle-notes.json`도 1단계의 세 걸음에는 포함되지 않습니다.
 
-로컬에서 빌드만 확인할 때는 `npm run build -- --local`을 사용합니다. 로컬 실행은 Vercel 배포나 심판 접수를 증명하지 않습니다. 저장소의 `src/attack-check.mjs`는 아직 1단계용 점검(`/data.json` 비로그인 요청)만 들어 있으며, 2단계 점검은 구현 전입니다.
+로컬에서 빌드만 확인할 때는 `npm run build -- --local`을 사용합니다. 로컬 실행은 Vercel 배포나 심판 접수를 증명하지 않습니다. 저장소의 `src/attack-check.mjs`는 `npm run bundle`이 실행하는 자기 점검입니다. 2단계에서는 실제 배포에 비로그인으로 `/data.json`(메모가 없어야 함)과 `/api/notes`(알려진 약점: 메모가 보임)를 요청해 건수만 기록합니다.
 
 ## 다음 단계의 코딩 도구에 전달할 규칙
 
@@ -29,7 +29,8 @@
 - 가상 메모 네 건은 Supabase의 `public.notes` 테이블에 있습니다. RLS가 켜져 있고 정책이 없으며, `anon`·`authenticated`의 권한은 모두 회수했습니다. `owner_id uuid` 칸은 나중 로그인 단계를 위해 비워 두었습니다.
 - 화면(`/`)은 Vercel 서버 함수 `api/notes.js`(주소 `/api/notes`)를 불러 메모를 보여 줍니다. 함수는 환경변수 `SUPABASE_URL`과 서버 전용 `SUPABASE_SECRET_KEY`로 Supabase를 읽습니다. 키 값은 Vercel 프로젝트의 Environment Variables 비밀 입력란에만 넣고, 코드·Git·브라우저 파일·응답·로그에는 넣지 않습니다.
 - 빌드는 더 이상 `public/data.json`을 만들지 않으며, 남아 있던 파일도 지웁니다. 배포의 `/aleph.json`은 계속 만들어지고 `step`은 `aleph.config.json`의 값(2)을 따릅니다.
-- 다시 실행: Vercel 환경변수 두 개를 넣은 뒤 다시 배포합니다. 정상이면 `/`에 카드 네 장이 보이고, `/data.json`은 404이며, `/api/notes`는 메모 네 건을 돌려줍니다. 환경변수가 없으면 `/api/notes`는 500 `NOTES_NOT_CONFIGURED`를 돌려줍니다.
+- `aleph.config.json`: `step` 2, `repoUrl`과 `publicAppUrl`은 실제 저장소·프로덕션 주소입니다. 로그인 발급자(`identityProvider`)와 허용 경로(`allowedRoutes`)는 3단계 전이라 비어 있습니다. `judgeIssuer`는 운영 측 값 그대로입니다. 정책 규칙은 시작 틀의 `starter.deny` 하나뿐입니다.
+- 다시 실행: Vercel 환경변수 두 개를 넣은 뒤 다시 배포합니다(환경변수를 바꾼 뒤에는 Deployments > Create Deployment > `main`). 정상이면 `/`에 카드 네 장이 보이고, `/data.json`은 404이며, `/api/notes`는 메모 네 건을 돌려줍니다. 환경변수가 없으면 `/api/notes`는 500 `NOTES_NOT_CONFIGURED`를 돌려줍니다.
 
 ### 알려진 약점
 

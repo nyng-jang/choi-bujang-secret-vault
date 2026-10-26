@@ -28,6 +28,7 @@ async function anonymousGet(app, path, init = {}) {
 }
 
 function noteCount(data) {
+  if (Array.isArray(data)) return data.length;
   return Array.isArray(data?.notes) ? data.notes.length : 0;
 }
 
@@ -77,7 +78,10 @@ async function loginChecks(config) {
   });
   const write = await anonymousGet(app, '/api/notes', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: '비로그인 추가 시도', content: '거절되어야 함' }),
+    body: JSON.stringify({ title: '비로그인 추가 시도', body: '거절되어야 함' }),
+  });
+  const remove = await anonymousGet(app, '/api/notes/00000000-0000-4000-8000-000000000000', {
+    method: 'DELETE',
   });
   const result = ({ status, data, text }) => `HTTP ${status}, 메모 ${noteCount(data)}건, `
     + `오류 ${typeof data?.error === 'string' ? data.error : '없음'}`
@@ -91,7 +95,9 @@ async function loginChecks(config) {
       observed: result(forged) },
     { attackId: 'anonymous_api_notes_write', expected: '토큰 없는 POST /api/notes는 401 LOGIN_REQUIRED, 메모가 추가되지 않음',
       observed: result(write) },
-    { attackId: 'logged_in_note_crud', expected: '로그인한 계정은 메모를 읽고 추가·수정·삭제할 수 있음',
+    { attackId: 'anonymous_api_note_delete', expected: '토큰 없는 DELETE /api/notes/:id는 401 LOGIN_REQUIRED',
+      observed: result(remove) },
+    { attackId: 'logged_in_note_crud', expected: 'A 계정은 내 메모 목록을 보고 POST·PUT·DELETE로 추가·수정·삭제하며, 지운 메모의 GET은 404',
       observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 화면에서 직접 확인' },
   ];
 }

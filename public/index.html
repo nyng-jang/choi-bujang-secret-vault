@@ -24,7 +24,6 @@
     button { font: inherit; padding: 9px 16px; border: 0; border-radius: 10px; background: #8ad8df; color: #0c1520; font-weight: 700; cursor: pointer; }
     button.ghost { background: transparent; color: #8ad8df; border: 1px solid #8ad8df; }
     .actions { display: flex; gap: 8px; margin-top: 10px; }
-    .mine { display: inline-block; margin-left: 6px; font-size: 13px; color: #8ad8df; }
     .status { min-height: 1.5em; color: #ffd08a; }
     [hidden] { display: none !important; }
   </style>
@@ -34,7 +33,7 @@
     <div class="eyebrow">BYTE BACK · 3단계 진짜 로그인</div>
     <h1>점령된 자료실</h1>
     <p>메모는 Supabase에 있고, 서버 함수 <code>/api/notes</code>가 로그인 토큰을 직접 확인한 뒤에만 읽고 씁니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
-    <div class="notice">로그인은 누가 요청했는지 확인할 뿐입니다. 아직은 로그인한 누구나 다른 계정의 메모까지 보고 고칠 수 있으며, 이 문제는 4단계에서 막습니다.</div>
+    <div class="notice">로그인은 누가 요청했는지 확인할 뿐입니다. 목록에는 내 메모만 나오지만, 아직은 메모 id를 아는 로그인 사용자라면 다른 계정의 메모도 읽고 고치고 지울 수 있습니다. 이 문제는 4단계에서 막습니다.</div>
 
     <form id="login" hidden>
       <label>이메일 <input name="email" type="email" autocomplete="username" required></label>
@@ -49,7 +48,7 @@
 
     <form id="add" hidden>
       <label>새 가상 메모 제목 <input name="title" maxlength="100" required></label>
-      <label>내용 <textarea name="content" maxlength="2000"></textarea></label>
+      <label>내용 <textarea name="body" maxlength="2000"></textarea></label>
       <button type="submit">추가</button>
     </form>
     <ul id="notes" aria-live="polite"><li>로그인 상태를 확인하는 중입니다.</li></ul>
@@ -66,10 +65,10 @@
     let supabase;
     let session = null;
 
-    async function api(method, query = '', body) {
+    async function api(method, path = '', body) {
       const headers = { Authorization: `Bearer ${session?.access_token ?? ''}` };
       if (body) headers['Content-Type'] = 'application/json';
-      const response = await fetch(`/api/notes${query}`, {
+      const response = await fetch(`/api/notes${path}`, {
         method, headers, cache: 'no-store', body: body ? JSON.stringify(body) : undefined,
       });
       const data = await response.json().catch(() => ({}));
@@ -83,13 +82,7 @@
       const title = document.createElement('strong');
       const content = document.createElement('span');
       title.textContent = note.title;
-      if (note.mine) {
-        const mine = document.createElement('small');
-        mine.className = 'mine';
-        mine.textContent = '내 메모';
-        title.append(mine);
-      }
-      content.textContent = note.content;
+      content.textContent = note.body;
       const actions = document.createElement('div');
       actions.className = 'actions';
       const edit = document.createElement('button');
@@ -99,7 +92,7 @@
       remove.type = 'button'; remove.className = 'ghost'; remove.textContent = '삭제';
       remove.addEventListener('click', async () => {
         if (!confirm('이 가상 메모를 삭제할까요?')) return;
-        try { await api('DELETE', `?id=${note.id}`); say('삭제했습니다.'); await loadNotes(); }
+        try { await api('DELETE', `/${encodeURIComponent(note.id)}`); say('삭제했습니다.'); await loadNotes(); }
         catch (error) { say(error.message); }
       });
       actions.append(edit, remove);
@@ -111,15 +104,15 @@
       const item = document.createElement('li');
       const form = document.createElement('form');
       form.innerHTML = '<label>제목 <input name="title" maxlength="100" required></label>'
-        + '<label>내용 <textarea name="content" maxlength="2000"></textarea></label>'
+        + '<label>내용 <textarea name="body" maxlength="2000"></textarea></label>'
         + '<div class="actions"><button type="submit">저장</button><button type="button" class="ghost">취소</button></div>';
       form.elements.title.value = note.title;
-      form.elements.content.value = note.content;
+      form.elements.body.value = note.body;
       form.querySelector('button.ghost').addEventListener('click', () => loadNotes());
       form.addEventListener('submit', async event => {
         event.preventDefault();
         try {
-          await api('PATCH', `?id=${note.id}`, { title: form.elements.title.value, content: form.elements.content.value });
+          await api('PUT', `/${encodeURIComponent(note.id)}`, { title: form.elements.title.value, body: form.elements.body.value });
           say('수정했습니다.');
           await loadNotes();
         } catch (error) { say(error.message); }
@@ -131,9 +124,9 @@
     async function loadNotes() {
       if (!session) { list.replaceChildren(line('로그인하면 가상 메모가 보입니다.')); return; }
       try {
-        const data = await api('GET');
-        if (!Array.isArray(data.notes)) throw new Error('자료 형식이 맞지 않습니다.');
-        list.replaceChildren(...(data.notes.length ? data.notes.map(noteItem) : [line('메모가 없습니다.')]));
+        const notes = await api('GET');
+        if (!Array.isArray(notes)) throw new Error('자료 형식이 맞지 않습니다.');
+        list.replaceChildren(...(notes.length ? notes.map(noteItem) : [line('내 메모가 없습니다.')]));
       } catch (error) {
         list.replaceChildren(line(error.message));
       }
@@ -183,7 +176,7 @@
       event.preventDefault();
       const form = event.currentTarget;
       try {
-        await api('POST', '', { title: form.elements.title.value, content: form.elements.content.value });
+        await api('POST', '', { title: form.elements.title.value, body: form.elements.body.value });
         form.reset();
         say('추가했습니다.');
         await loadNotes();

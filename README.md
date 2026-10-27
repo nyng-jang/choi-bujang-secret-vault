@@ -31,9 +31,17 @@
 - 서버 함수(`api/notes.js`)는 바꾸지 않았습니다. 로그인 토큰 검증(401), 주인 확인(남의 메모 403, 없는 메모 404), 본문 `owner_id` 거절(400), 서버 전용 키 `SUPABASE_SECRET_KEY` 사용은 4단계와 같습니다.
 - `aleph.config.json`: `step` 5. `originalApiUrl`은 원본 자료 API의 쿼리 없는 HTTPS 주소 `https://kvzvodzkgrwavncezuiw.supabase.co/rest/v1/notes`(커밋 `093b783`)로, `identityProvider.issuer`와 같은 Supabase 프로젝트이고 `api/notes.js`가 서버 전용 키로 읽고 쓰는 바로 그 테이블입니다. 심판은 이 주소를 공개용 키(anon)로 직접 불러 거부되는지 봅니다. `identityProvider`, `allowedRoutes`(다섯 경로), `judgeIssuer`는 4단계와 같고 `restoreRoute`는 비어 있습니다. `src/decider.mjs`의 `RULE_IDS`는 `starter.deny` 하나뿐입니다.
 - 실제 배포·DB에서 학생이 직접 확인한 것(2026-10-27): 회수 전후 권한 대조에서 회수 뒤 `public`·`anon`·`authenticated`는 모든 권한 false, `service_role`은 그대로. 브라우저 Console에서 공개용 키만으로, 그리고 A 로그인 토큰으로 Data API `notes`를 직접 읽기 → 둘 다 거부(401/403, 42501). 회수 뒤에도 A의 화면 목록·추가·수정·삭제는 `/api/notes`로 200/201이고, Network에 `rest/v1` 요청은 화면에서 생기지 않음.
-- 자기 점검(`src/attack-check.mjs`) 11개: 4단계의 9개(공개용 키 직접 읽기·추가는 이제 `originalApiUrl`로 보냄), 배포 화면 코드의 직접 자료 호출 수 1개, 로그인 토큰으로 원본 직접 읽기 1개(토큰을 쓰지 않으므로 「미실행」).
+- 자기 점검(`src/attack-check.mjs`) 11개(아래 가점에서 키 점검 1개를 더해 12개): 4단계의 9개(공개용 키 직접 읽기·추가는 이제 `originalApiUrl`로 보냄), 배포 화면 코드의 직접 자료 호출 수 1개, 로그인 토큰으로 원본 직접 읽기 1개(토큰을 쓰지 않으므로 「미실행」).
 - 다시 실행: Supabase 대시보드 > SQL Editor > New query에서 `notes_grants_check_stage5.sql`(권한 대조) → `notes_revoke_direct.sql`(권한 회수) → `notes_grants_check_stage5.sql`을 차례로 실행합니다(Git에 올리지 않음). PC의 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 Git Bash에서 `git pull && npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.
 - 해결 안 된 시험과 약점: `npm run test:package`는 `api/notes.js`가 `package/baseline-functions.json`에 없어서 계속 실패합니다. Supabase의 「Allow new users to sign up」은 끄는 것을 권합니다. 2단계에 적은 옛 공개 커밋·옛 배포 문제도 그대로입니다.
+
+### 5단계 가점: 화면 코드에 Supabase 키 없애기
+
+- 로그인·로그아웃도 서버 함수 `api/session.js`가 합니다. `POST /api/session` 본문 `{email,password}` → 서버가 Vercel 환경변수의 공개용 키로 Supabase Auth에 로그인하고, 브라우저에는 내 접근 토큰·만료 시각·이메일만 돌려줍니다(새로 고침 토큰·키는 돌려주지 않음). 실패하면 `{error:"LOGIN_FAILED",reason}`이고, 화면은 3단계와 같은 문장으로 이유를 보여 줍니다. `DELETE /api/session`은 토큰을 검증한 뒤 그 Supabase 세션을 끝냅니다(이미 받은 접근 토큰은 만료 시각까지 유효).
+- 화면(`public/index.html`)은 Supabase 브라우저 라이브러리를 쓰지 않고, 토큰을 그 탭의 sessionStorage에만 둡니다(탭을 닫거나 토큰이 만료되면 다시 로그인). 빌드는 `public/login-config.json`과 `public/vendor/`를 더 이상 만들지 않고 남은 것도 지웁니다. `SUPABASE_PUBLISHABLE_KEY`는 서버 함수만 씁니다.
+- `/api/notes`의 토큰 검증·주인 확인, `nosniff` 헤더는 그대로입니다. `allowedRoutes`에 `POST /api/session`, `DELETE /api/session`을 더해 일곱 경로입니다.
+- 자기 점검에 `/`·`/login-config.json`·`/vendor/supabase.js`의 키 형태 값 개수(0개여야 정상)를 더했습니다. 공개용 키로 원본을 직접 부르는 두 점검은 이제 화면에서 키를 얻을 수 없으므로, `npm run bundle` 때 환경변수 `SUPABASE_PUBLISHABLE_KEY`를 줄 때만 실행하고 없으면 「미실행」입니다.
+- 되돌리기: 로그인이 깨지면 Vercel Deployments에서 이전 배포를 Instant Rollback하고, 저장소는 `git revert <이 커밋>`으로 되돌립니다.
 
 ## 4단계 기록 「로그인해도 내 자료만 보이게 합니다」
 

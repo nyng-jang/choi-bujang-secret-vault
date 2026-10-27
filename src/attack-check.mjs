@@ -106,12 +106,14 @@ async function loginChecks(config) {
 
 // Stage 4: the stage 3 checks still hold, and the notes table refuses the
 // anon role even when someone calls the Supabase Data API directly with the
-// publishable key the browser already receives from /login-config.json.
+// publishable key. Stage 4 read it from /login-config.json. From the stage 5
+// bonus the browser no longer gets it, so set SUPABASE_PUBLISHABLE_KEY when
+// running the bundle to send these two requests; otherwise they stay 미실행.
 async function ownerChecks(config) {
   const checks = (await loginChecks(config)).filter(item => item.attackId !== 'logged_in_note_crud');
   const app = appUrl(config);
   const login = await anonymousGet(app, '/login-config.json');
-  const key = login.data?.publishableKey;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY?.trim() || login.data?.publishableKey;
   const dataApi = new URL(config.originalApiUrl
     ?? new URL('/rest/v1/notes', new URL(config.identityProvider.issuer).origin));
   let read = null;
@@ -125,7 +127,7 @@ async function ownerChecks(config) {
     });
   }
   const result = res => res === null
-    ? `미실행: /login-config.json에서 공개용 키를 받지 못함 (HTTP ${login.status})`
+    ? `미실행: 공개용 키 없음 (/login-config.json HTTP ${login.status}, SUPABASE_PUBLISHABLE_KEY 미설정)`
     : `HTTP ${res.status}, 메모 ${noteCount(res.data)}건, 오류 코드 ${typeof res.data?.code === 'string' ? res.data.code : '없음'}`
       + (SECRET_LIKE.test(res.text) ? ', 응답에 키 형태 값 있음' : '');
   return [
@@ -149,10 +151,17 @@ async function serverOnlyChecks(config) {
   const app = appUrl(config);
   const page = await anonymousGet(app, '/');
   const direct = (page.text.match(/\/rest\/v1|\.from\(\s*['"`]notes/gu) ?? []).length;
+  // Bonus: no Supabase key anywhere the screen loads from.
+  const files = [page, await anonymousGet(app, '/login-config.json'), await anonymousGet(app, '/vendor/supabase.js')];
+  const keyLike = /\bsb_publishable_[A-Za-z0-9_-]{10,}|\beyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/gu;
+  const keys = files.reduce((sum, file) => sum + (file.status >= 200 && file.status < 300
+    ? (file.text.match(keyLike) ?? []).length : 0), 0);
   return [
     ...checks,
     { attackId: 'browser_direct_data_calls', expected: '배포된 화면(/) 코드에 Data API 직접 호출(/rest/v1, .from(\'notes\'))이 0곳, 메모는 /api/notes로만',
       observed: page.status >= 200 && page.status < 300 ? `HTTP ${page.status}, 직접 호출 ${direct}곳` : `HTTP ${page.status}, 화면을 받지 못함` },
+    { attackId: 'browser_public_key_absent', expected: '화면(/)·/login-config.json·/vendor/supabase.js에 Supabase 공개 키(sb_publishable_·anon 키)가 0개, 로그인은 /api/session',
+      observed: `/ HTTP ${files[0].status}, /login-config.json HTTP ${files[1].status}, /vendor/supabase.js HTTP ${files[2].status}, 키 형태 값 ${keys}개` },
     { attackId: 'logged_in_data_api_direct', expected: '로그인한 A 토큰으로 originalApiUrl의 notes를 직접 읽으면 권한 없음(42501), 메모 0건',
       observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 브라우저 Console에서 직접 확인' },
   ];

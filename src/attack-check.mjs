@@ -43,6 +43,7 @@ export async function runAttackChecks(config) {
   }
   if (config.step === 3) return loginChecks(config);
   if (config.step === 4) return ownerChecks(config);
+  if (config.step === 5) return serverOnlyChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   const oldFile = await anonymousGet(app, '/data.json');
@@ -111,7 +112,8 @@ async function ownerChecks(config) {
   const app = appUrl(config);
   const login = await anonymousGet(app, '/login-config.json');
   const key = login.data?.publishableKey;
-  const dataApi = new URL('/rest/v1/notes', new URL(config.identityProvider.issuer).origin);
+  const dataApi = new URL(config.originalApiUrl
+    ?? new URL('/rest/v1/notes', new URL(config.identityProvider.issuer).origin));
   let read = null;
   let write = null;
   if (typeof key === 'string' && key.startsWith('sb_publishable_')) {
@@ -135,6 +137,23 @@ async function ownerChecks(config) {
     { attackId: 'logged_in_own_note_crud', expected: 'A·B 각자 내 메모 목록을 보고 POST·PUT·DELETE로 추가·수정·삭제하며, 지운 메모의 GET은 404',
       observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 화면에서 직접 확인' },
     { attackId: 'cross_owner_note_access', expected: 'B 토큰으로 A 메모 id에 GET·PUT·DELETE하면 모두 403 NOTE_FORBIDDEN, A 메모는 그대로',
+      observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 브라우저 Console에서 직접 확인' },
+  ];
+}
+
+// Stage 5: notes are read and written only through /api/notes. The browser
+// page has no direct Data API call, and the original API (originalApiUrl)
+// refuses the publishable key. The stage 4 checks still hold.
+async function serverOnlyChecks(config) {
+  const checks = await ownerChecks(config);
+  const app = appUrl(config);
+  const page = await anonymousGet(app, '/');
+  const direct = (page.text.match(/\/rest\/v1|\.from\(\s*['"`]notes/gu) ?? []).length;
+  return [
+    ...checks,
+    { attackId: 'browser_direct_data_calls', expected: '배포된 화면(/) 코드에 Data API 직접 호출(/rest/v1, .from(\'notes\'))이 0곳, 메모는 /api/notes로만',
+      observed: page.status >= 200 && page.status < 300 ? `HTTP ${page.status}, 직접 호출 ${direct}곳` : `HTTP ${page.status}, 화면을 받지 못함` },
+    { attackId: 'logged_in_data_api_direct', expected: '로그인한 A 토큰으로 originalApiUrl의 notes를 직접 읽으면 권한 없음(42501), 메모 0건',
       observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 브라우저 Console에서 직접 확인' },
   ];
 }

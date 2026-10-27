@@ -8,7 +8,7 @@
 2. 방어전 1단계 카드의 **Deploy** 버튼을 누릅니다. Vercel에 GitHub로 로그인하고, 새 저장소가 **본인 계정의 Public 저장소**인지 확인한 뒤 Deploy를 누릅니다.
 3. 배포가 끝나면 화면에 나온 `https://…vercel.app` 주소를 방어전 1단계 카드에 붙여넣고 제출합니다. 저장소 주소나 설정 파일은 적지 않습니다.
 
-배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 4단계」를, 지난 단계 기록은 「3단계 기록」과 「2단계 기록」을 보세요.
+배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 5단계」를, 지난 단계 기록은 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
 
 ## 시작 틀의 자동 처리
 
@@ -16,7 +16,7 @@
 
 `aleph.config.json`의 `repoUrl`과 `publicAppUrl`은 1단계 시작 틀에서는 자리표시자였고, 학생이 편집하지 않았습니다. 2단계 저장점(`f53f2cb`)에서 실제 저장소·프로덕션 주소로 채웠습니다. 2단계 이후 코딩 도구가 필요한 설정과 보호 기능을 단계별로 작성합니다. `npm run bundle`과 `bundle-notes.json`도 1단계의 세 걸음에는 포함되지 않습니다.
 
-로컬에서 빌드만 확인할 때는 `npm run build -- --local`을 사용합니다. 로컬 실행은 Vercel 배포나 심판 접수를 증명하지 않습니다. 저장소의 `src/attack-check.mjs`는 `npm run bundle`이 실행하는 자기 점검입니다. 4단계에서는 실제 배포에 `/data.json`(메모가 없어야 함), 토큰 없는 `/api/notes` 읽기·추가와 `/api/notes/:id` 삭제, 서명 없는 가짜 토큰 읽기를 요청하고(모두 401이어야 정상), 배포의 `/login-config.json`에 있는 공개용 키(anon)로 Supabase Data API의 `notes`를 직접 읽기·추가해(권한 없음 42501이어야 정상) 상태 코드와 건수만 기록합니다. 로그인한 상태의 내 메모 읽기·추가·수정·삭제와 B→A 메모 접근은 비밀번호나 토큰을 쓰지 않기 위해 자동 점검에서 빼고 「미실행」으로 남깁니다.
+로컬에서 빌드만 확인할 때는 `npm run build -- --local`을 사용합니다. 로컬 실행은 Vercel 배포나 심판 접수를 증명하지 않습니다. 저장소의 `src/attack-check.mjs`는 `npm run bundle`이 실행하는 자기 점검입니다. 5단계에서는 실제 배포에 `/data.json`(메모가 없어야 함), 토큰 없는 `/api/notes` 읽기·추가와 `/api/notes/:id` 삭제, 서명 없는 가짜 토큰 읽기를 요청하고(모두 401이어야 정상), 배포의 `/login-config.json`에 있는 공개용 키(anon)로 `originalApiUrl`(Supabase Data API의 `notes`)을 직접 읽기·추가하며(권한 없음 42501이어야 정상), 배포된 화면 `/`의 코드에 Data API 직접 호출이 몇 곳인지(0곳이어야 정상) 세어 상태 코드와 건수만 기록합니다. 로그인한 상태의 내 메모 읽기·추가·수정·삭제, B→A 메모 접근, 로그인 토큰으로 원본 직접 읽기는 비밀번호나 토큰을 쓰지 않기 위해 자동 점검에서 빼고 「미실행」으로 남깁니다.
 
 ## 다음 단계의 코딩 도구에 전달할 규칙
 
@@ -24,12 +24,23 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
-## 현재 단계: 4단계 「로그인해도 내 자료만 보이게 합니다」
+## 현재 단계: 5단계 「자료 요청을 서버 한곳으로 모읍니다」
+
+- 브라우저(`public/index.html`)의 메모 읽기·추가·수정·삭제는 모두 Vercel 서버 함수 `/api/notes`를 거칩니다. 브라우저가 Supabase를 부르는 곳은 로그인(`supabase.auth`의 signInWithPassword·signOut·onAuthStateChange·getSession)뿐이고, `.from('notes')`나 `/rest/v1` 같은 직접 자료 호출은 없습니다(4단계부터 이미 없어 화면 코드는 바꾸지 않음).
+- DB(`public.notes`만): `PUBLIC`·`anon`·`authenticated`의 직접 권한을 모두 회수했습니다. 4단계에서 `authenticated`에 주었던 SELECT·INSERT·UPDATE·DELETE도 거둬서, 로그인한 사람의 토큰으로도 Data API를 직접 부를 수 없습니다. RLS와 정책 네 개는 켠 채로 두어, 나중에 실수로 권한이 다시 생겨도 남의 행은 막습니다. `service_role`(서버 전용 키) 권한은 Supabase 기본값 그대로이며 다른 테이블은 건드리지 않았습니다.
+- 서버 함수(`api/notes.js`)는 바꾸지 않았습니다. 로그인 토큰 검증(401), 주인 확인(남의 메모 403, 없는 메모 404), 본문 `owner_id` 거절(400), 서버 전용 키 `SUPABASE_SECRET_KEY` 사용은 4단계와 같습니다.
+- `aleph.config.json`: `step` 5. `originalApiUrl`은 원본 자료 API의 쿼리 없는 HTTPS 주소 `https://kvzvodzkgrwavncezuiw.supabase.co/rest/v1/notes`(커밋 `093b783`)로, `identityProvider.issuer`와 같은 Supabase 프로젝트이고 `api/notes.js`가 서버 전용 키로 읽고 쓰는 바로 그 테이블입니다. 심판은 이 주소를 공개용 키(anon)로 직접 불러 거부되는지 봅니다. `identityProvider`, `allowedRoutes`(다섯 경로), `judgeIssuer`는 4단계와 같고 `restoreRoute`는 비어 있습니다. `src/decider.mjs`의 `RULE_IDS`는 `starter.deny` 하나뿐입니다.
+- 실제 배포·DB에서 학생이 직접 확인한 것(2026-10-27): 회수 전후 권한 대조에서 회수 뒤 `public`·`anon`·`authenticated`는 모든 권한 false, `service_role`은 그대로. 브라우저 Console에서 공개용 키만으로, 그리고 A 로그인 토큰으로 Data API `notes`를 직접 읽기 → 둘 다 거부(401/403, 42501). 회수 뒤에도 A의 화면 목록·추가·수정·삭제는 `/api/notes`로 200/201이고, Network에 `rest/v1` 요청은 화면에서 생기지 않음.
+- 자기 점검(`src/attack-check.mjs`) 11개: 4단계의 9개(공개용 키 직접 읽기·추가는 이제 `originalApiUrl`로 보냄), 배포 화면 코드의 직접 자료 호출 수 1개, 로그인 토큰으로 원본 직접 읽기 1개(토큰을 쓰지 않으므로 「미실행」).
+- 다시 실행: Supabase 대시보드 > SQL Editor > New query에서 `notes_grants_check_stage5.sql`(권한 대조) → `notes_revoke_direct.sql`(권한 회수) → `notes_grants_check_stage5.sql`을 차례로 실행합니다(Git에 올리지 않음). PC의 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 Git Bash에서 `git pull && npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.
+- 해결 안 된 시험과 약점: `npm run test:package`는 `api/notes.js`가 `package/baseline-functions.json`에 없어서 계속 실패합니다. Supabase의 「Allow new users to sign up」은 끄는 것을 권합니다. 2단계에 적은 옛 공개 커밋·옛 배포 문제도 그대로입니다.
+
+## 4단계 기록 「로그인해도 내 자료만 보이게 합니다」
 
 - 메모 주인 정리: 처음 가상 메모 네 건은 A 계정, 공개 가능한 시험 메모 「B 시험 메모」 한 건은 B 계정 소유입니다. 소유자는 이메일로 `auth.users`에서 ID를 찾는 학습용 SQL로 맞췄습니다(SQL은 메모 문장이 있어 Git에 올리지 않음).
 - 앱 API(`api/notes.js`, 커밋 `f019db3`): 주인은 언제나 서버가 검증한 토큰의 사용자 ID이고, URL·본문의 `owner_id`는 믿지 않습니다(본문에 있으면 400). `GET·PUT·DELETE /api/notes/:id`는 DB의 `owner_id`와 비교해 없으면 404 `NOTE_NOT_FOUND`, 남의 메모면 403 `NOTE_FORBIDDEN`으로 기본 거부합니다. 추가는 토큰 ID로 저장하고, 수정은 기존 행과 바뀐 행이 모두 내 것인지, 삭제는 내 행인지 `owner_id` 조건으로 확인합니다. 한 건 응답 `{id,title,body}`와 수정 본문 `{title,body}`는 3단계와 같습니다.
 - DB(`public.notes`만): `PUBLIC`·`anon`·`authenticated` 권한을 모두 회수한 뒤 `authenticated`에만 SELECT·INSERT·UPDATE·DELETE를 주었습니다. RLS 정책 네 개가 모두 `auth.uid() = owner_id`일 때만 허용합니다(SELECT·DELETE는 기존 행 USING, INSERT는 새 행 WITH CHECK, UPDATE는 둘 다). `anon`에는 권한이 없습니다. 앱 API는 서버 전용 키(service_role, RLS를 건너뜀)를 쓰므로 앱의 주인 확인은 API가 하고, RLS는 Data API로 직접 들어오는 길을 막는 두 번째 벽입니다. 심판이 재현할 수 없는 `authenticated` 역할의 직접 접근은 점수 확인에서 뺍니다.
-- `aleph.config.json`: `step` 4. `identityProvider`, `allowedRoutes`(다섯 경로), `judgeIssuer`는 3단계와 같고, `originalApiUrl`·`restoreRoute`는 5단계 전이라 비어 있습니다. `src/decider.mjs`의 `RULE_IDS`는 `starter.deny` 하나뿐입니다. 로그아웃 상태의 JSON 401, `/aleph.json`, `X-Content-Type-Options: nosniff`는 그대로입니다.
+- `aleph.config.json`(4단계 당시): `step` 4. `identityProvider`, `allowedRoutes`(다섯 경로), `judgeIssuer`는 3단계와 같고, `originalApiUrl`·`restoreRoute`는 5단계 전이라 비어 있습니다. `src/decider.mjs`의 `RULE_IDS`는 `starter.deny` 하나뿐입니다. 로그아웃 상태의 JSON 401, `/aleph.json`, `X-Content-Type-Options: nosniff`는 그대로입니다.
 - 실제 배포·DB에서 학생이 직접 확인한 것(2026-10-26): B 토큰으로 A 메모 id에 `GET·PUT·DELETE` → 모두 403, A 메모는 그대로. A·B 각자 화면에서 내 메모 추가·수정·삭제 동작. 공개용 키로 Data API `notes` 직접 읽기 → 401 `42501 permission denied for table notes`. 적용 후 `information_schema.role_table_grants`·`has_table_privilege` 대조에서 `anon`은 권한 없음, `authenticated`는 SELECT·INSERT·UPDATE·DELETE만.
 - 자기 점검(`src/attack-check.mjs`) 9개: 3단계의 비로그인·가짜 토큰 점검 5개, 공개용 키로 Data API 직접 읽기·추가 2개, 로그인한 내 메모 CRUD와 B→A 접근 2개(토큰을 쓰지 않으므로 「미실행」).
 - 다시 실행: Supabase SQL Editor에서 소유자 정리 SQL, `notes_rls.sql`(권한·RLS), `notes_grants_check.sql`(권한 대조)을 차례로 실행하고(셋 다 Git에 올리지 않음), Vercel에 다시 배포합니다. PC의 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `git pull && npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.

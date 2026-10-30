@@ -1,0 +1,35 @@
+{
+  "schema": "aleph.xdr.patterns.v1",
+  "moduleKey": "brute-force",
+  "technique": "T1110",
+  "fields": {
+    "mitre": "rule.mitre",
+    "failures": "data.count",
+    "accounts": "data.accounts",
+    "description": "rule.description"
+  },
+  "patterns": [
+    {
+      "name": "same-source-failure-burst",
+      "technique": "T1110.001",
+      "condition": {
+        "mitreIncludes": "T1110",
+        "strongMinFailures": 30,
+        "weakBelowFailures": 10,
+        "successWords": ["성공했"]
+      },
+      "evidence": "MITRE ATT&CK T1110.001 Password Guessing: 한 주소가 짧은 시간에 비밀번호를 계속 넣어 보며 로그인 실패가 쌓입니다. https://attack.mitre.org/techniques/T1110/001/"
+    },
+    {
+      "name": "same-password-many-accounts",
+      "technique": "T1110.003",
+      "condition": {
+        "mitreIncludes": "T1110",
+        "strongMinAccounts": 5,
+        "descriptionAny": ["같은 비밀번호", "여러 계정", "계정 이름을 바꿔"],
+        "accountCountWords": ["계정 (\\d+)개"]
+      },
+      "evidence": "MITRE ATT&CK T1110.003 Password Spraying: 한 주소가 여러 계정에 같은 비밀번호를 넣어 잠금을 피하며 실패가 계정마다 흩어집니다. https://attack.mitre.org/techniques/T1110/003/"
+    }
+  ]
+}

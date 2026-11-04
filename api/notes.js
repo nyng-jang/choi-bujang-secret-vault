@@ -12,10 +12,13 @@
 // a value from the URL or body. /:id routes compare it with the row's owner_id
 // and deny by default: missing note 404, someone else's note 403 NOTE_FORBIDDEN.
 // Writes also filter on owner_id so the database only touches the caller's row.
+// Stage 8: every request gets a server-chosen resource ID in X-Resource-Id
+// (src/resources.mjs). Instructor notices use a separate zone, notices/<uuid>.
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
+import { resourceIdFor } from '../src/resources.mjs';
 
 const config = JSON.parse(readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'));
 const TITLE_MAX = 100;
@@ -100,6 +103,11 @@ export default async function handler(request, response) {
     return;
   }
   const noteId = id?.toLowerCase();
+  // Stage 8: the server names the resource from the verified route only
+  // (notes/mine or notes/<uuid>). No name means no access.
+  const resourceId = resourceIdFor(request.method, noteId === undefined ? '/api/notes' : `/api/notes/${noteId}`);
+  if (!resourceId) { fail(response, 400, 'INVALID_NOTE_ID'); return; }
+  response.setHeader('X-Resource-Id', resourceId);
   if ((request.method === 'POST' || request.method === 'PUT')
       && !String(request.headers['content-type'] ?? '').startsWith('application/json')) {
     fail(response, 415, 'JSON_REQUIRED');

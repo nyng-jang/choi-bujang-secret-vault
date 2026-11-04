@@ -10,13 +10,9 @@
     "audience": "authenticated"
   },
   "allowedRoutes": [
-    "GET /api/notes",
-    "POST /api/notes",
     "GET /api/notes/:id",
-    "PUT /api/notes/:id",
-    "DELETE /api/notes/:id",
-    "POST /api/session",
-    "DELETE /api/session"
+    "GET /api/notices",
+    "GET /api/notices/:id"
   ],
   "originalApiUrl": "https://kvzvodzkgrwavncezuiw.supabase.co/rest/v1/notes",
   "restoreRoute": null

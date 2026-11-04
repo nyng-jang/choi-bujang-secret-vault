@@ -16,10 +16,47 @@
 // stepUp.verified가 true이고, authAgeSeconds가 계약 범위(0~900초) 정수이고,
 // 그 로그인이 가장 최근 이상 사건보다 나중(로그인 나이 <= 사건 나이)일 때만 allow입니다.
 // verified 하나만 보고 건너뛰지 않으며, 하나라도 아니면 step_up을 유지합니다. 토큰은 받지도 기록하지도 않습니다.
-export const RULE_IDS = Object.freeze(['device_registered', 'unusual_access', 'step_up_required', 'starter.deny']);
+//
+// 8단계 resource_zone: 서비스(service)와 정확한 경로 모양(route)으로 구역을 나눕니다.
+// 아래 ZONE_ROUTES 표에 있는 「서비스 + 경로 모양」만 허용하고, 표에 없으면 모두 거부합니다.
+//   메모(notes): 자료 ID 하나를 고르는 GET /notes/:id 만 허용. ID 없는 전체 목록 GET /notes 와 쓰기는 거부.
+//   반 공지(notices): 읽기 GET /notices, GET /notices/:id 만 허용. 쓰기는 누구에게나 거부.
+//     판정기 요청에는 역할이 없으므로 강사의 공지 수정은 판정기가 아니라 서버의 관리 경로에서 처리합니다.
+//   강사 자료(materials): 표에 넣지 않아 판정기에서 모두 거부.
+// path가 route 모양과 정말 같은지도 봅니다(:id는 한 칸, 더 깊은 경로는 거부). ID 형식은 좁히지 않습니다.
+// 쿼리로 기능을 고르지 않고, :id와 같은 깊이에 export 같은 기능 경로를 두지 않습니다.
+// 메모 주인 비교는 판정기가 아니라 자료 API(api/notes.js)에서 합니다.
+// 공지·강사 자료의 서비스 이름(notices, materials)은 계약에 예시가 없어 정한 이름입니다.
+export const RULE_IDS = Object.freeze(['device_registered', 'resource_zone', 'unusual_access', 'step_up_required', 'starter.deny']);
 
-// 내 자료실 읽기만 허용합니다. 추가·수정·삭제는 기본 거부(starter.deny)입니다.
+// 내 자료실 읽기만 허용합니다. 추가·수정·삭제는 기본 거부입니다.
 const METHODS = new Set(['GET']);
+
+// 서비스별로 허용하는 정확한 경로 모양입니다. 여기에 없는 서비스·경로는 거부합니다.
+const ZONE_ROUTES = Object.freeze({
+  notes: Object.freeze(['GET /notes/:id']),
+  notices: Object.freeze(['GET /notices', 'GET /notices/:id']),
+});
+
+// path가 route 모양과 같은지 칸마다 비교합니다. :id 자리는 비어 있지 않은 한 칸이면 됩니다.
+function pathMatchesRoute(path, routePath) {
+  if (typeof path !== 'string' || /[?#\\]/u.test(path)) return false;
+  const want = routePath.split('/');
+  const got = path.split('/');
+  if (got.length !== want.length || got[0] !== '') return false;
+  return want.every((part, index) => (part === ':id'
+    ? got[index].trim().length > 0 && got[index] !== '.' && got[index] !== '..'
+    : got[index] === part));
+}
+
+function zoneAllows(request) {
+  const service = request.service;
+  if (typeof service !== 'string' || !Object.hasOwn(ZONE_ROUTES, service)) return false;
+  const route = request.route;
+  if (typeof route !== 'string' || !ZONE_ROUTES[service].includes(route)) return false;
+  const [method, routePath] = route.split(' ');
+  return request.method === method && pathMatchesRoute(request.path, routePath);
+}
 
 const nonEmpty = value => typeof value === 'string' && value.trim().length > 0;
 
@@ -87,12 +124,13 @@ function loggedInAgainAfter(stepUp, eventAgeSeconds) {
 }
 
 function answer(request, decision, reasonCode, ruleId) {
+  const ruleIds = Array.isArray(ruleId) ? [...ruleId] : [ruleId];
   return {
     schema: 'aleph.decision.v1',
     requestId: request.requestId,
     decision,
     reasonCode,
-    ruleIds: [ruleId],
+    ruleIds,
   };
 }
 
@@ -100,19 +138,23 @@ export async function decide(request) {
   if (request?.deviceRegistered !== true) {
     return answer(request ?? {}, 'deny', 'device_not_registered', 'device_registered');
   }
-  const signedIn = nonEmpty(request.subjectId);
-  const knownMethod = METHODS.has(request.method);
-  const routeMatches = knownMethod && nonEmpty(request.path)
-    && typeof request.route === 'string' && request.route.startsWith(`${request.method} /`);
-  if (signedIn && knownMethod && routeMatches) {
-    const eventAge = unusualAccessAge(readAccessContext(request));
-    if (eventAge !== null) {
-      if (loggedInAgainAfter(request.stepUp, eventAge)) {
-        return answer(request, 'allow', 'approved', 'step_up_required');
-      }
-      return answer(request, 'step_up', 'step_up_required', 'unusual_access');
-    }
-    return answer(request, 'allow', 'approved', 'device_registered');
+  if (!nonEmpty(request.subjectId)) {
+    return answer(request, 'deny', 'starter_not_ready', 'starter.deny');
   }
-  return answer(request, 'deny', 'starter_not_ready', 'starter.deny');
+  // 8단계: 구역 표에 없는 서비스·경로·동작(공지·강사 자료 쓰기, 메모 전체 목록 포함)은 여기서 거부합니다.
+  if (!zoneAllows(request)) {
+    return answer(request, 'deny', 'starter_not_ready', 'resource_zone');
+  }
+  // 6단계 읽기(GET)만 허용 규칙은 그대로 둡니다.
+  if (!METHODS.has(request.method)) {
+    return answer(request, 'deny', 'starter_not_ready', 'starter.deny');
+  }
+  const eventAge = unusualAccessAge(readAccessContext(request));
+  if (eventAge !== null) {
+    if (loggedInAgainAfter(request.stepUp, eventAge)) {
+      return answer(request, 'allow', 'approved', ['step_up_required', 'resource_zone']);
+    }
+    return answer(request, 'step_up', 'step_up_required', 'unusual_access');
+  }
+  return answer(request, 'allow', 'approved', ['device_registered', 'resource_zone']);
 }

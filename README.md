@@ -24,6 +24,33 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
+## 6단계 진행 중 「등록한 기기만 자료실에 들어옵니다」
+
+- 판정기 `src/decider.mjs`에 규칙 `device_registered`를 넣었습니다(커밋 `deca797`, `6227e1d`). `RULE_IDS`는 `device_registered`, `starter.deny`입니다. 계약 `docs/DECIDER_REQUEST.md`에 있는 칸만 봅니다.
+  - `deviceRegistered`가 `true`가 아니면(false이거나 값이 없으면) `deny`, 이유 코드 `device_not_registered`
+  - 등록 기기이고, `subjectId`(로그인한 주체)가 있고, `method`가 `GET`(읽기)이고, `route`가 `GET /`로 시작하면 `allow`, 이유 코드 `approved`
+  - 그 밖(로그인 없음, 추가·수정·삭제, 동작과 경로가 다름)은 `deny`, `starter.deny`
+- 자료실 주소, 화면, `/api/notes`, `aleph.config.json`(`step` 5)은 바꾸지 않았습니다. 따로 설치할 접속 프로그램은 없고, 실제 미등록 기기 공격은 심판이 맡습니다.
+
+### 6단계 판정기 확인 순서
+
+PC의 Git Bash에서 저장소 폴더(`C:\Users\User\choi-bujang-secret-vault`)로 이동한 뒤 차례로 실행합니다.
+
+1. `git pull`
+2. `npm run decider:test`
+   - 정상: `통과 · 등록 기기의 정상 요청`, `통과 · 미등록 기기의 가상 요청` 두 줄이 나오고 오류 없이 끝납니다.
+   - 거부되어야 할 결과가 허용되면: 해당 줄이 `확인 필요`로 나오고 명령이 실패합니다.
+3. 판정기 응답 글자를 직접 보려면 같은 곳에서 아래 한 줄을 실행합니다(파일을 만들지 않습니다).
+
+   ```bash
+   node --input-type=module -e 'import { decide } from "./src/decider.mjs"; import { fixtureRequests } from "./scripts/fixture-7.mjs"; const { normal } = fixtureRequests(); for (const [name, r] of [["등록 기기", normal], ["미등록 기기", { ...normal, deviceRegistered: false }]]) { const o = await decide(r); console.log(name, o.decision, o.reasonCode, o.ruleIds.join(",")); }'
+   ```
+
+   - 정상: `등록 기기 allow approved device_registered`
+   - 거부되어야 할 결과: `미등록 기기 deny device_not_registered device_registered`
+
+이 시험은 미리 만든 가상 요청으로 하는 연습이며, 심판 판정이나 실제 기기 접속 증거가 아닙니다. 2026-11-04 커밋 `6227e1d`에서 위 두 명령 모두 정상 결과가 나왔습니다.
+
 ## 현재 단계: 5단계 「자료 요청을 서버 한곳으로 모읍니다」
 
 - 브라우저(`public/index.html`)의 메모 읽기·추가·수정·삭제는 모두 Vercel 서버 함수 `/api/notes`를 거칩니다. 브라우저가 Supabase를 부르는 곳은 로그인(`supabase.auth`의 signInWithPassword·signOut·onAuthStateChange·getSession)뿐이고, `.from('notes')`나 `/rest/v1` 같은 직접 자료 호출은 없습니다(4단계부터 이미 없어 화면 코드는 바꾸지 않음).

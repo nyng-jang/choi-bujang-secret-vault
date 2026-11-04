@@ -45,6 +45,7 @@ export async function runAttackChecks(config) {
   if (config.step === 4) return ownerChecks(config);
   if (config.step === 5) return serverOnlyChecks(config);
   if (config.step === 6) return deviceChecks(config);
+  if (config.step === 7) return stepUpChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   const oldFile = await anonymousGet(app, '/data.json');
@@ -186,5 +187,31 @@ async function deviceChecks(config) {
       observed: `로컬 판정기 호출 결과: 등록 기기 ${show(registered)}, 미등록 기기 ${show(unregistered)}` },
     { attackId: 'unregistered_device_access', expected: '미등록 기기로 실제 자료실 접근 시 거부',
       observed: '미실행: 미등록 기기 접속 시도는 심판이 맡으므로 자동 점검에서 보내지 않음' },
+  ];
+}
+
+// Stage 7: unusual combined access goes to step_up, and only a new login after it is allowed again.
+// This calls src/decider.mjs locally with the practice requests from scripts/fixture-7.mjs;
+// it is not a sent request and not the judge's result. No engine with the step-up contract
+// runs in this environment, so the real block-before-re-login check stays 미실행.
+async function stepUpChecks(config) {
+  const checks = await deviceChecks(config);
+  const { decide } = await import('./decider.mjs');
+  const { fixtureRequests } = await import('../scripts/fixture-7.mjs');
+  const { normal, suspicious } = fixtureRequests();
+  const fresh = () => crypto.randomUUID();
+  const ordinary = await decide(normal);
+  const unusual = await decide(suspicious);
+  const again = await decide({ ...suspicious, requestId: fresh(),
+    stepUp: { verified: true, authAgeSeconds: 30 } });
+  const forged = await decide({ ...suspicious, requestId: fresh(),
+    signals: { ...suspicious.signals, source: 'browser' } });
+  const show = answer => `${answer?.decision}·${answer?.reasonCode}`;
+  return [
+    ...checks,
+    { attackId: 'decider_step_up_local', expected: '로컬 가상 요청(심판 판정 아님): 정상 allow·approved, 복합 이상 step_up·step_up_required, 새 로그인 뒤 allow·approved, 출처 browser 위조는 규칙이 켜지지 않음',
+      observed: `로컬 판정기 호출 결과: 정상 ${show(ordinary)}, 복합 이상 ${show(unusual)}, 새 로그인 뒤 ${show(again)}, 출처 browser ${show(forged)}` },
+    { attackId: 'step_up_live_block', expected: '실제 접속에서 다시 로그인 전에는 자료 차단, 새 로그인 뒤 요청은 허용',
+      observed: '미실행: 새 로그인 시각을 검증하는 계약이 준비된 반 엔진이 이 환경에 없어 실측하지 않음' },
   ];
 }

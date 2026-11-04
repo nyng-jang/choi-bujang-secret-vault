@@ -8,7 +8,7 @@
 2. 방어전 1단계 카드의 **Deploy** 버튼을 누릅니다. Vercel에 GitHub로 로그인하고, 새 저장소가 **본인 계정의 Public 저장소**인지 확인한 뒤 Deploy를 누릅니다.
 3. 배포가 끝나면 화면에 나온 `https://…vercel.app` 주소를 방어전 1단계 카드에 붙여넣고 제출합니다. 저장소 주소나 설정 파일은 적지 않습니다.
 
-배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 7단계」를, 지난 단계 기록은 「6단계 기록」, 「5단계 기록」, 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
+배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 8단계」를, 지난 단계 기록은 「7단계 기록」, 「6단계 기록」, 「5단계 기록」, 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
 
 ## 시작 틀의 자동 처리
 
@@ -24,7 +24,26 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
-## 현재 단계: 7단계 「평소와 다른 접속은 다시 확인합니다」
+## 현재 단계: 8단계 「자료마다 갈 수 있는 구역을 나눕니다」
+
+- 자원 ID(커밋 `eb9a82a`): `src/resources.mjs`가 서버가 확인한 경로만 보고 구역 이름표를 정합니다. 내 메모 목록 `notes/mine`, 메모 한 건 `notes/<번호>`, 반 공지 `notices/<번호>`, 강사 자료 `materials/<번호>`이고, 그 밖은 이름표 없음(거부)입니다. `/api/notes`는 로그인 확인 뒤 응답 머리글 `X-Resource-Id`에 이 값을 붙입니다.
+- 판정기 구역 규칙 `resource_zone`(커밋 `e7eb209`): 서비스와 정확한 경로 모양만 허용합니다. 메모는 `GET /notes/:id`만(전체 목록·쓰기 거부), 반 공지는 `GET /notices`, `GET /notices/:id`만(쓰기는 누구에게나 거부), 강사 자료와 알 수 없는 경로는 모두 거부합니다. `path`가 경로 모양과 칸마다 같아야 하고, ID 형식은 좁히지 않으며 쿼리는 쓰지 않습니다. 메모 주인 비교는 판정기에 넣지 않았습니다.
+  - `RULE_IDS`: `device_registered`, `resource_zone`, `unusual_access`, `step_up_required`, `starter.deny`. 6·7단계 규칙은 그대로입니다.
+- 자료 API 마지막 대조(커밋 `990d225`): `src/access.mjs`가 검증된 토큰 사용자와 저장된 값만 대조합니다. 메모는 `notes.owner_id`(아니면 `not_owner`), 반 공지 쓰기와 강사 자료는 DB `public.instructors` 표에 저장된 강사만(아니면 `not_instructor`)입니다. 화면 메뉴와 요청 본문·머리글·쿼리의 `role`은 읽지 않습니다. 거부하면 서버 기록에 `notes: deny <사유>`만 남깁니다.
+  - 2026-11-04 학생이 배포된 화면의 브라우저 Console에서 B 토큰으로 A 메모를 직접 요청해 `403`을 확인했습니다(자동 점검 기록 아님).
+- `aleph.config.json`: `step` 8. 배포 주소, `identityProvider`, `originalApiUrl`, `judgeIssuer`는 7단계와 같습니다. `allowedRoutes`는 판정기가 허용하는 `GET /api/notes/:id`, `GET /api/notices`, `GET /api/notices/:id` 세 개입니다.
+- 자기 점검(`src/attack-check.mjs`) 20개: 7단계의 16개 + 토큰 없는 메모 한 건 요청에 이름표가 없는지(실제 요청) 1개 + 판정기 구역 규칙 로컬 가상 요청 1개 + `src/access.mjs` 로컬 호출 1개(둘 다 심판 판정 아님) + 다른 사람 메모 직접 요청 1개(토큰을 쓰지 않으므로 「미실행」).
+- 다시 실행: PC의 Git Bash에서 저장소 폴더(`C:\Users\User\choi-bujang-secret-vault`)로 이동해 `git pull` → `npm run decider:test`(정상: `통과` 네 줄) → `npm run fixture:7`(정상: `정상 사건: allow`, `복합 이상 사건: step_up`). 그다음 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.
+- 해결 안 된 시험과 약점:
+  - 반 공지·강사 자료 API와 자료는 아직 없습니다. 구역 이름과 판정·대조 규칙만 있고, 강사 표 `public.instructors`를 만드는 SQL은 Git에 넣지 않았습니다(아직 읽는 API가 없음).
+  - 화면이 쓰는 메모 목록(`GET /api/notes`), 메모 추가·수정·삭제, `/api/session`은 판정기 허용 경로가 아니어서 `allowedRoutes`에서 뺐습니다. 반 엔진을 거치는 실제 접속에서 화면이 어떻게 동작할지는 실측하지 않았습니다.
+  - 공지·강사 자료의 서비스 이름(`notices`, `materials`)은 계약에 예시가 없어 정한 이름이고, 거부 이유 코드는 등록 목록을 몰라 기존 `starter_not_ready`를 씁니다.
+  - `npm run test:package`는 `api/notes.js`가 `package/baseline-functions.json`에 없어서 계속 실패합니다.
+  - 무차별 로그인 보너스(`xdr/brute-force/`, 커밋 `e50c31e`, `b5f8bf7`, `9a2139a`)는 제작 3까지 하고 멈춘 상태입니다.
+
+이 판정기 시험은 미리 만든 가상 요청으로 하는 연습이며, 심판 판정이나 실제 접속 증거가 아닙니다. 2026-11-04 커밋 `990d225`에서 `decider:test` 4개 통과, `fixture:7` 통과를 확인했습니다.
+
+## 7단계 기록 「평소와 다른 접속은 다시 확인합니다」
 
 - 판정기 `src/decider.mjs`에 7단계 변경 세 가지를 넣었습니다. `RULE_IDS`는 `device_registered`, `unusual_access`, `step_up_required`, `starter.deny`입니다. 계약 `docs/DECIDER_REQUEST.md`에 있는 칸만 봅니다.
   - 입력 검사(커밋 `6c97c13`): `signals.source`가 `judge_fixture`(심판 가상 사건)일 때만 지역·네트워크·시각을 쓰고, `none`은 정보 없음, 그 밖의 값·빈 값·틀린 모양은 출처 불명으로 모두 `null`(모름)입니다. 계약에 없는 칸(위조 헤더, `geo` 등)은 읽지 않고 빈 값을 정상값으로 채우지 않습니다.

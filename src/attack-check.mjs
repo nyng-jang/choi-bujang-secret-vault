@@ -46,6 +46,7 @@ export async function runAttackChecks(config) {
   if (config.step === 5) return serverOnlyChecks(config);
   if (config.step === 6) return deviceChecks(config);
   if (config.step === 7) return stepUpChecks(config);
+  if (config.step === 8) return zoneChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   const oldFile = await anonymousGet(app, '/data.json');
@@ -213,5 +214,51 @@ async function stepUpChecks(config) {
       observed: `로컬 판정기 호출 결과: 정상 ${show(ordinary)}, 복합 이상 ${show(unusual)}, 새 로그인 뒤 ${show(again)}, 출처 browser ${show(forged)}` },
     { attackId: 'step_up_live_block', expected: '실제 접속에서 다시 로그인 전에는 자료 차단, 새 로그인 뒤 요청은 허용',
       observed: '미실행: 새 로그인 시각을 검증하는 계약이 준비된 반 엔진이 이 환경에 없어 실측하지 않음' },
+  ];
+}
+
+// Stage 8: resources are split into zones (notes, notices, materials).
+// One real anonymous request checks that no resource ID leaks before login.
+// The decider and src/access.mjs are called locally with practice values;
+// they are not sent requests and not the judge's result. Another user's note
+// needs a real login token, which the automatic check never uses, so it stays 미실행.
+async function zoneChecks(config) {
+  const checks = await stepUpChecks(config);
+  const app = appUrl(config);
+  const probe = await fetch(new URL('/api/notes/00000000-0000-4000-8000-000000000000', app), {
+    redirect: 'error', signal: AbortSignal.timeout(10000),
+  });
+  const probeBody = await probe.text();
+  let probeError = '없음';
+  try { probeError = JSON.parse(probeBody)?.error ?? '없음'; } catch { /* not JSON */ }
+  const leakedId = probe.headers.get('x-resource-id');
+
+  const { decide } = await import('./decider.mjs');
+  const { fixtureRequests } = await import('../scripts/fixture-7.mjs');
+  const { normal } = fixtureRequests();
+  const ask = (service, method, route, path) => decide({ ...normal, requestId: crypto.randomUUID(),
+    service, method, route, path });
+  const ownNote = await ask('notes', 'GET', 'GET /notes/:id', '/notes/demo');
+  const noteList = await ask('notes', 'GET', 'GET /notes', '/notes');
+  const noticeWrite = await ask('notices', 'PUT', 'PUT /notices/:id', '/notices/demo');
+  const material = await ask('materials', 'GET', 'GET /materials/:id', '/materials/demo');
+  const show = answer => `${answer?.decision}·${answer?.ruleIds?.join('+')}`;
+
+  const { checkAccess } = await import('./access.mjs');
+  const student = { kind: 'student', userId: 'practice-user-a' };
+  const others = await checkAccess({ user: student, resourceId: 'notes/demo', method: 'GET',
+    ownerId: 'practice-user-b' });
+  const noticeByStudent = await checkAccess({ user: student, resourceId: 'notices/demo', method: 'PUT',
+    loadInstructor: async () => false });
+  return [
+    ...checks,
+    { attackId: 'anonymous_resource_id', expected: '토큰 없는 GET /api/notes/:id는 401 LOGIN_REQUIRED, X-Resource-Id 머리글 없음',
+      observed: `HTTP ${probe.status}, 오류 ${probeError}, X-Resource-Id ${leakedId ? `있음(${leakedId})` : '없음'}` },
+    { attackId: 'decider_resource_zone_local', expected: '로컬 가상 요청(심판 판정 아님): 내 메모 한 건 GET allow, 메모 전체 목록·반 공지 쓰기·강사 자료는 deny·resource_zone',
+      observed: `로컬 판정기 호출 결과: 메모 한 건 ${show(ownNote)}, 메모 목록 ${show(noteList)}, 공지 쓰기 ${show(noticeWrite)}, 강사 자료 ${show(material)}` },
+    { attackId: 'api_access_local', expected: '로컬 함수 호출(심판 판정 아님): 남의 메모는 not_owner, 강사 권한 없는 공지 쓰기는 not_instructor',
+      observed: `src/access.mjs 호출 결과: 남의 메모 ${others.allowed ? '허용' : `거부·${others.reason}`}, 학생 공지 쓰기 ${noticeByStudent.allowed ? '허용' : `거부·${noticeByStudent.reason}`}` },
+    { attackId: 'other_owner_live', expected: 'B 토큰으로 A 메모 GET /api/notes/:id를 직접 요청하면 403 NOTE_FORBIDDEN',
+      observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 브라우저 Console에서 직접 확인' },
   ];
 }

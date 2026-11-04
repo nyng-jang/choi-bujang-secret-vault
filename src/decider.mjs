@@ -13,6 +13,41 @@ const METHODS = new Set(['GET']);
 
 const nonEmpty = value => typeof value === 'string' && value.trim().length > 0;
 
+// 7단계 입력 검사: 접속 정보(지역·네트워크·시각·행동)의 출처를 구분합니다.
+// 계약의 signals와 recentEvents만 읽고, 계약에 없는 칸(headers, geo, device 등)은 읽지 않습니다.
+// signals.source가 judge_fixture(심판이 보낸 가상 사건)일 때만 지역·네트워크·시각을 씁니다.
+// none이면 정보 없음, 그 밖의 값·빈 값·틀린 모양은 출처 불명(untrusted)이며 값은 모두 null(모름)입니다.
+// 값이 없거나 모양이 틀리면 임의의 정상값으로 채우지 않고 null로 둡니다.
+// 이 함수는 출처만 구분하며, 아직 허용·거부 결과에는 쓰지 않습니다.
+const SIGNAL_SOURCES = new Set(['judge_fixture', 'none']);
+const MAX_RECENT_EVENTS = 12;
+
+const knownText = value => (nonEmpty(value) && value !== 'unknown' ? value : null);
+const knownHour = value => (Number.isInteger(value) && value >= 0 && value <= 23 ? value : null);
+
+function readRecentEvents(events) {
+  if (!Array.isArray(events) || events.length > MAX_RECENT_EVENTS) return null;
+  const wellFormed = events.every(event => event && typeof event === 'object'
+    && nonEmpty(event.kind)
+    && Number.isFinite(event.ageSeconds) && event.ageSeconds >= 0
+    && Number.isInteger(event.count) && event.count >= 0);
+  return wellFormed ? events.map(({ kind, ageSeconds, count }) => ({ kind, ageSeconds, count })) : null;
+}
+
+export function readAccessContext(request) {
+  const signals = request?.signals;
+  const isObject = signals !== null && typeof signals === 'object' && !Array.isArray(signals);
+  const source = isObject && SIGNAL_SOURCES.has(signals.source) ? signals.source : 'untrusted';
+  const fromJudge = source === 'judge_fixture';
+  return {
+    source,
+    region: fromJudge ? knownText(signals.region) : null,
+    network: fromJudge ? knownText(signals.network) : null,
+    hour: fromJudge ? knownHour(signals.hour) : null,
+    recentEvents: readRecentEvents(request?.recentEvents),
+  };
+}
+
 function answer(request, decision, reasonCode, ruleId) {
   return {
     schema: 'aleph.decision.v1',

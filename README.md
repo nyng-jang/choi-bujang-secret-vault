@@ -8,7 +8,7 @@
 2. 방어전 1단계 카드의 **Deploy** 버튼을 누릅니다. Vercel에 GitHub로 로그인하고, 새 저장소가 **본인 계정의 Public 저장소**인지 확인한 뒤 Deploy를 누릅니다.
 3. 배포가 끝나면 화면에 나온 `https://…vercel.app` 주소를 방어전 1단계 카드에 붙여넣고 제출합니다. 저장소 주소나 설정 파일은 적지 않습니다.
 
-배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 5단계」를, 지난 단계 기록은 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
+배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 6단계」를, 지난 단계 기록은 「5단계 기록」, 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
 
 ## 시작 틀의 자동 처리
 
@@ -24,13 +24,17 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
-## 6단계 진행 중 「등록한 기기만 자료실에 들어옵니다」
+## 현재 단계: 6단계 「등록한 기기만 자료실에 들어옵니다」
 
 - 판정기 `src/decider.mjs`에 규칙 `device_registered`를 넣었습니다(커밋 `deca797`, `6227e1d`). `RULE_IDS`는 `device_registered`, `starter.deny`입니다. 계약 `docs/DECIDER_REQUEST.md`에 있는 칸만 봅니다.
   - `deviceRegistered`가 `true`가 아니면(false이거나 값이 없으면) `deny`, 이유 코드 `device_not_registered`
   - 등록 기기이고, `subjectId`(로그인한 주체)가 있고, `method`가 `GET`(읽기)이고, `route`가 `GET /`로 시작하면 `allow`, 이유 코드 `approved`
   - 그 밖(로그인 없음, 추가·수정·삭제, 동작과 경로가 다름)은 `deny`, `starter.deny`
-- 자료실 주소, 화면, `/api/notes`, `aleph.config.json`(`step` 5)은 바꾸지 않았습니다. 따로 설치할 접속 프로그램은 없고, 실제 미등록 기기 공격은 심판이 맡습니다.
+- 자료실 주소, 화면, `/api/notes`, `/api/session`, DB 권한은 5단계와 같습니다. 따로 설치할 접속 프로그램은 없고, 실제 미등록 기기 공격은 심판이 맡습니다.
+- `aleph.config.json`: `step` 6. `identityProvider`, `allowedRoutes`(일곱 경로), `originalApiUrl`, `judgeIssuer`는 5단계와 같고 `restoreRoute`는 비어 있습니다. `RULE_IDS`는 실제로 쓰는 `device_registered`와 기본 거부 `starter.deny` 두 개입니다.
+- 자기 점검(`src/attack-check.mjs`) 14개: 5단계의 12개 + 판정기 로컬 가상 요청 1개(등록 기기 allow·approved, 미등록 기기 deny·device_not_registered를 기록하며 심판 판정이 아님) + 미등록 기기 실제 접속 1개(심판이 맡으므로 「미실행」).
+- 다시 실행: 아래 확인 순서로 판정기를 시험한 뒤, PC의 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 Git Bash에서 `git pull && npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.
+- 해결 안 된 시험과 약점: `npm run test:package`는 `api/notes.js`가 `package/baseline-functions.json`에 없어서 계속 실패합니다. 판정기는 시작 틀이 아는 이유 코드(`approved`, `device_not_registered`, `starter_not_ready`)만 씁니다. 무차별 로그인 보너스(`xdr/brute-force/`, 커밋 `e50c31e`, `b5f8bf7`, `9a2139a`)는 제작 3까지 하고 멈춘 상태입니다.
 
 ### 6단계 판정기 확인 순서
 
@@ -51,12 +55,12 @@ PC의 Git Bash에서 저장소 폴더(`C:\Users\User\choi-bujang-secret-vault`)�
 
 이 시험은 미리 만든 가상 요청으로 하는 연습이며, 심판 판정이나 실제 기기 접속 증거가 아닙니다. 2026-11-04 커밋 `6227e1d`에서 위 두 명령 모두 정상 결과가 나왔습니다.
 
-## 현재 단계: 5단계 「자료 요청을 서버 한곳으로 모읍니다」
+## 5단계 기록 「자료 요청을 서버 한곳으로 모읍니다」
 
 - 브라우저(`public/index.html`)의 메모 읽기·추가·수정·삭제는 모두 Vercel 서버 함수 `/api/notes`를 거칩니다. 브라우저가 Supabase를 부르는 곳은 로그인(`supabase.auth`의 signInWithPassword·signOut·onAuthStateChange·getSession)뿐이고, `.from('notes')`나 `/rest/v1` 같은 직접 자료 호출은 없습니다(4단계부터 이미 없어 화면 코드는 바꾸지 않음).
 - DB(`public.notes`만): `PUBLIC`·`anon`·`authenticated`의 직접 권한을 모두 회수했습니다. 4단계에서 `authenticated`에 주었던 SELECT·INSERT·UPDATE·DELETE도 거둬서, 로그인한 사람의 토큰으로도 Data API를 직접 부를 수 없습니다. RLS와 정책 네 개는 켠 채로 두어, 나중에 실수로 권한이 다시 생겨도 남의 행은 막습니다. `service_role`(서버 전용 키) 권한은 Supabase 기본값 그대로이며 다른 테이블은 건드리지 않았습니다.
 - 서버 함수(`api/notes.js`)는 바꾸지 않았습니다. 로그인 토큰 검증(401), 주인 확인(남의 메모 403, 없는 메모 404), 본문 `owner_id` 거절(400), 서버 전용 키 `SUPABASE_SECRET_KEY` 사용은 4단계와 같습니다.
-- `aleph.config.json`: `step` 5. `originalApiUrl`은 원본 자료 API의 쿼리 없는 HTTPS 주소 `https://kvzvodzkgrwavncezuiw.supabase.co/rest/v1/notes`(커밋 `093b783`)로, `identityProvider.issuer`와 같은 Supabase 프로젝트이고 `api/notes.js`가 서버 전용 키로 읽고 쓰는 바로 그 테이블입니다. 심판은 이 주소를 공개용 키(anon)로 직접 불러 거부되는지 봅니다. `identityProvider`, `allowedRoutes`(다섯 경로), `judgeIssuer`는 4단계와 같고 `restoreRoute`는 비어 있습니다. `src/decider.mjs`의 `RULE_IDS`는 `starter.deny` 하나뿐입니다.
+- `aleph.config.json`(5단계 당시): `step` 5. `originalApiUrl`은 원본 자료 API의 쿼리 없는 HTTPS 주소 `https://kvzvodzkgrwavncezuiw.supabase.co/rest/v1/notes`(커밋 `093b783`)로, `identityProvider.issuer`와 같은 Supabase 프로젝트이고 `api/notes.js`가 서버 전용 키로 읽고 쓰는 바로 그 테이블입니다. 심판은 이 주소를 공개용 키(anon)로 직접 불러 거부되는지 봅니다. `identityProvider`, `allowedRoutes`(다섯 경로), `judgeIssuer`는 4단계와 같고 `restoreRoute`는 비어 있습니다. `src/decider.mjs`의 `RULE_IDS`는 `starter.deny` 하나뿐입니다.
 - 실제 배포·DB에서 학생이 직접 확인한 것(2026-10-27): 회수 전후 권한 대조에서 회수 뒤 `public`·`anon`·`authenticated`는 모든 권한 false, `service_role`은 그대로. 브라우저 Console에서 공개용 키만으로, 그리고 A 로그인 토큰으로 Data API `notes`를 직접 읽기 → 둘 다 거부(401/403, 42501). 회수 뒤에도 A의 화면 목록·추가·수정·삭제는 `/api/notes`로 200/201이고, Network에 `rest/v1` 요청은 화면에서 생기지 않음.
 - 자기 점검(`src/attack-check.mjs`) 11개(아래 가점에서 키 점검 1개를 더해 12개): 4단계의 9개(공개용 키 직접 읽기·추가는 이제 `originalApiUrl`로 보냄), 배포 화면 코드의 직접 자료 호출 수 1개, 로그인 토큰으로 원본 직접 읽기 1개(토큰을 쓰지 않으므로 「미실행」).
 - 다시 실행: Supabase 대시보드 > SQL Editor > New query에서 `notes_grants_check_stage5.sql`(권한 대조) → `notes_revoke_direct.sql`(권한 회수) → `notes_grants_check_stage5.sql`을 차례로 실행합니다(Git에 올리지 않음). PC의 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 Git Bash에서 `git pull && npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.

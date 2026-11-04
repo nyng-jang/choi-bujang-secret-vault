@@ -44,6 +44,7 @@ export async function runAttackChecks(config) {
   if (config.step === 3) return loginChecks(config);
   if (config.step === 4) return ownerChecks(config);
   if (config.step === 5) return serverOnlyChecks(config);
+  if (config.step === 6) return deviceChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   const oldFile = await anonymousGet(app, '/data.json');
@@ -164,5 +165,26 @@ async function serverOnlyChecks(config) {
       observed: `/ HTTP ${files[0].status}, /login-config.json HTTP ${files[1].status}, /vendor/supabase.js HTTP ${files[2].status}, 키 형태 값 ${keys}개` },
     { attackId: 'logged_in_data_api_direct', expected: '로그인한 A 토큰으로 originalApiUrl의 notes를 직접 읽으면 권한 없음(42501), 메모 0건',
       observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 브라우저 Console에서 직접 확인' },
+  ];
+}
+
+// Stage 6: the decider allows reading only from a registered device.
+// This calls src/decider.mjs locally with the practice requests from
+// scripts/fixture-7.mjs; it is not a sent request and not the judge's result.
+// The real unregistered-device attempt is the judge's job, so it stays 미실행.
+async function deviceChecks(config) {
+  const checks = await serverOnlyChecks(config);
+  const { decide } = await import('./decider.mjs');
+  const { fixtureRequests } = await import('../scripts/fixture-7.mjs');
+  const { normal } = fixtureRequests();
+  const registered = await decide(normal);
+  const unregistered = await decide({ ...normal, requestId: crypto.randomUUID(), deviceRegistered: false });
+  const show = answer => `${answer?.decision}·${answer?.reasonCode}`;
+  return [
+    ...checks,
+    { attackId: 'decider_device_registered_local', expected: '로컬 가상 요청(심판 판정 아님): 등록 기기 GET은 allow·approved, 미등록 기기는 deny·device_not_registered',
+      observed: `로컬 판정기 호출 결과: 등록 기기 ${show(registered)}, 미등록 기기 ${show(unregistered)}` },
+    { attackId: 'unregistered_device_access', expected: '미등록 기기로 실제 자료실 접근 시 거부',
+      observed: '미실행: 미등록 기기 접속 시도는 심판이 맡으므로 자동 점검에서 보내지 않음' },
   ];
 }

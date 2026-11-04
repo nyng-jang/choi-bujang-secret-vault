@@ -14,11 +14,16 @@
 // Writes also filter on owner_id so the database only touches the caller's row.
 // Stage 8: every request gets a server-chosen resource ID in X-Resource-Id
 // (src/resources.mjs). Instructor notices use a separate zone, notices/<uuid>.
+// Stage 8 final check (src/access.mjs): the verified user is compared with the
+// stored owner (notes.owner_id) and stored instructor permission
+// (public.instructors). Menu choices and body/header/query role are never read.
+// Denials log one short reason only, e.g. "notes: deny not_owner".
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
 import { resourceIdFor } from '../src/resources.mjs';
+import { checkAccess, readInstructor } from '../src/access.mjs';
 
 const config = JSON.parse(readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'));
 const TITLE_MAX = 100;
@@ -48,6 +53,12 @@ function setup() {
 
 function fail(response, status, error) {
   response.status(status).json({ error });
+}
+
+// Short denial reason for the server log. No user ID, token, or note text.
+function deny(response, status, error, reason) {
+  console.warn(`notes: deny ${reason}`);
+  fail(response, status, error);
 }
 
 function noteView(row) {
@@ -115,6 +126,12 @@ export default async function handler(request, response) {
   }
 
   try {
+    const access = { user, resourceId, method: request.method,
+      loadInstructor: () => readInstructor(supabase, user.userId) };
+    if (noteId === undefined) {
+      const listed = await checkAccess(access);
+      if (!listed.allowed) { deny(response, 403, 'NOTE_FORBIDDEN', listed.reason); return; }
+    }
     if (request.method === 'GET' && noteId === undefined) {
       const { data, error } = await supabase.from('notes').select(COLUMNS)
         .eq('owner_id', user.userId).order('id', { ascending: true });
@@ -124,7 +141,7 @@ export default async function handler(request, response) {
     }
     if (request.method === 'POST') {
       const note = noteInput(request.body, ['id', 'title', 'body']);
-      if (!note) { fail(response, 400, 'INVALID_NOTE'); return; }
+      if (!note) { deny(response, 400, 'INVALID_NOTE', 'bad_body'); return; }
       const { data, error } = await supabase.from('notes')
         .insert({ public_id: note.id ?? randomUUID(), owner_id: user.userId,
           title: note.title, content: note.content })
@@ -141,7 +158,11 @@ export default async function handler(request, response) {
       .eq('public_id', noteId).maybeSingle();
     if (found.error) throw found.error;
     if (!found.data) { fail(response, 404, 'NOTE_NOT_FOUND'); return; }
-    if (!isOwner(found.data, user)) { fail(response, 403, 'NOTE_FORBIDDEN'); return; }
+    const checked = await checkAccess({ ...access, ownerId: found.data.owner_id });
+    if (!checked.allowed || !isOwner(found.data, user)) {
+      deny(response, 403, 'NOTE_FORBIDDEN', checked.allowed ? 'not_owner' : checked.reason);
+      return;
+    }
 
     if (request.method === 'GET') {
       response.status(200).json(noteView(found.data));
@@ -158,7 +179,7 @@ export default async function handler(request, response) {
     // PUT: the old row must be mine (filter) and the new row must stay mine
     // (owner_id written from the token, then checked on the returned row).
     const note = noteInput(request.body, ['title', 'body']);
-    if (!note) { fail(response, 400, 'INVALID_NOTE'); return; }
+    if (!note) { deny(response, 400, 'INVALID_NOTE', 'bad_body'); return; }
     const { data, error } = await supabase.from('notes')
       .update({ owner_id: user.userId, title: note.title, content: note.content })
       .eq('public_id', noteId).eq('owner_id', user.userId).select(OWNED_COLUMNS);

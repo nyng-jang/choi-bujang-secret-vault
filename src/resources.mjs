@@ -4,10 +4,11 @@
 //   GET  /api/notes         -> notes/mine        (내 메모 목록)
 //   *    /api/notes/<uuid>  -> notes/<uuid>      (내 메모 한 건)
 //   *    /api/notices/<uuid>-> notices/<uuid>    (강사 공지 한 건, 구역 이름만 정함)
+//   *    /api/materials/<uuid> -> materials/<uuid> (강사 자료 한 건, 구역 이름만 정함)
 //   그 밖의 경로             -> null              (이름표 없음, 기본 거부)
 // 강사 공지 자료와 주소는 아직 없습니다. 이번에는 메모와 다른 구역 이름만 정합니다.
 
-export const RESOURCE_ZONES = Object.freeze({ notes: 'notes', notices: 'notices' });
+export const RESOURCE_ZONES = Object.freeze({ notes: 'notes', notices: 'notices', materials: 'materials' });
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 

@@ -11,7 +11,12 @@
 // 새벽 시각 + 처음 보는 네트워크 + 최근 갑자기 많은 사건이 한꺼번에 겹치면
 // step_up(추가 본인 확인)으로 보내고 사유 코드 step_up_required를 남깁니다.
 // 지역(region)은 조건에 넣지 않으므로 지역 하나만으로는 막히지 않고, 영구 차단도 하지 않습니다.
-export const RULE_IDS = Object.freeze(['device_registered', 'unusual_access', 'starter.deny']);
+//
+// 7단계 step_up_required: unusual_access에 걸린 요청은 엔진이 확인한 새 로그인(stepUp) 뒤에만 다시 판정해 허용합니다.
+// stepUp.verified가 true이고, authAgeSeconds가 계약 범위(0~900초) 정수이고,
+// 그 로그인이 가장 최근 이상 사건보다 나중(로그인 나이 <= 사건 나이)일 때만 allow입니다.
+// verified 하나만 보고 건너뛰지 않으며, 하나라도 아니면 step_up을 유지합니다. 토큰은 받지도 기록하지도 않습니다.
+export const RULE_IDS = Object.freeze(['device_registered', 'unusual_access', 'step_up_required', 'starter.deny']);
 
 // 내 자료실 읽기만 허용합니다. 추가·수정·삭제는 기본 거부(starter.deny)입니다.
 const METHODS = new Set(['GET']);
@@ -58,15 +63,27 @@ const UNUSUAL_HOURS = { from: 0, to: 5 };   // 새벽 0~5시를 평소와 다른
 const BURST_WINDOW_SECONDS = 300;           // 최근 5분 안의 사건만 셉니다.
 const BURST_MIN_COUNT = 10;                 // 그 안의 사건 수 합이 10건 이상이면 갑자기 많이 읽은 것으로 봅니다.
 
-function isUnusualAccess(context) {
-  if (context.source !== 'judge_fixture') return false;
+// 복합 이상이면 가장 최근 이상 사건의 나이(초)를, 아니면 null을 돌려줍니다.
+function unusualAccessAge(context) {
+  if (context.source !== 'judge_fixture') return null;
   const unusualHour = context.hour !== null
     && context.hour >= UNUSUAL_HOURS.from && context.hour <= UNUSUAL_HOURS.to;
   const newNetwork = context.network === 'unusual';
-  const burst = Array.isArray(context.recentEvents) && context.recentEvents
-    .filter(event => event.ageSeconds <= BURST_WINDOW_SECONDS)
-    .reduce((sum, event) => sum + event.count, 0) >= BURST_MIN_COUNT;
-  return unusualHour && newNetwork && burst;
+  const recent = Array.isArray(context.recentEvents)
+    ? context.recentEvents.filter(event => event.ageSeconds <= BURST_WINDOW_SECONDS) : [];
+  const burst = recent.reduce((sum, event) => sum + event.count, 0) >= BURST_MIN_COUNT;
+  if (!(unusualHour && newNetwork && burst)) return null;
+  return Math.min(...recent.map(event => event.ageSeconds));
+}
+
+// 계약의 stepUp 범위입니다. verified가 true일 때 authAgeSeconds는 0~900초입니다.
+const STEP_UP_MAX_AGE_SECONDS = 900;
+
+function loggedInAgainAfter(stepUp, eventAgeSeconds) {
+  if (stepUp === null || typeof stepUp !== 'object' || stepUp.verified !== true) return false;
+  const age = stepUp.authAgeSeconds;
+  return Number.isInteger(age) && age >= 0 && age <= STEP_UP_MAX_AGE_SECONDS
+    && age <= eventAgeSeconds;
 }
 
 function answer(request, decision, reasonCode, ruleId) {
@@ -88,7 +105,11 @@ export async function decide(request) {
   const routeMatches = knownMethod && nonEmpty(request.path)
     && typeof request.route === 'string' && request.route.startsWith(`${request.method} /`);
   if (signedIn && knownMethod && routeMatches) {
-    if (isUnusualAccess(readAccessContext(request))) {
+    const eventAge = unusualAccessAge(readAccessContext(request));
+    if (eventAge !== null) {
+      if (loggedInAgainAfter(request.stepUp, eventAge)) {
+        return answer(request, 'allow', 'approved', 'step_up_required');
+      }
       return answer(request, 'step_up', 'step_up_required', 'unusual_access');
     }
     return answer(request, 'allow', 'approved', 'device_registered');

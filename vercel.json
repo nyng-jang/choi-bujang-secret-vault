@@ -7,7 +7,8 @@
     "api/notes.js": { "includeFiles": "aleph.config.json" },
     "api/session.js": { "includeFiles": "aleph.config.json" },
     "api/restore.js": { "includeFiles": "aleph.config.json" },
-    "api/device.js": { "includeFiles": "aleph.config.json" }
+    "api/device.js": { "includeFiles": "aleph.config.json" },
+    "api/ops.js": { "includeFiles": "{aleph.config.json,src/decider.mjs,policy-backups/verified/**,policy-backups/audit.log}" }
   },
   "rewrites": [
     { "source": "/api/notes/:id/restore", "destination": "/api/restore?id=:id" },

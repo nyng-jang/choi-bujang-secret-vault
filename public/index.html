@@ -33,12 +33,25 @@
     .device b { min-width: 6.5em; color: #8ad8df; }
     .device small { color: #8fa3ba; font-size: 14px; }
     .offline { margin: 18px 0; padding: 14px 18px; border: 1px solid #ffd08a; border-radius: 14px; color: #ffe9c4; background: #5a431a44; }
+    .ops { display: grid; gap: 14px; margin: 28px 0; padding: 18px; border: 1px solid #8ad8df; border-radius: 14px; background: #0e2230; }
+    .ops h2 { margin: 0; font-size: 22px; }
+    .ops article { padding: 14px 16px; border: 1px solid #51667c; border-radius: 12px; background: #1a2a3d; }
+    .ops h3 { margin: 0 0 6px; font-size: 17px; }
+    .ops p, .ops small { margin: 4px 0; font-size: 15px; }
+    .ops table { max-width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; display: block; overflow-x: auto; }
+    .ops, .ops article, .ops div { min-width: 0; overflow-wrap: anywhere; }
+    .ops th, .ops td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #2b3d52; white-space: nowrap; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 13px; font-weight: 700; margin-right: 6px; }
+    .tag.confirmed { background: #1f5d4a; color: #c9f5e3; }
+    .tag.not_run { background: #4a4a4a; color: #e6e6e6; }
+    .tag.unavailable, .tag.mismatch { background: #7a2b38; color: #ffe3e8; }
+    .tag.match { background: #24425f; color: #d7ebff; }
     [hidden] { display: none !important; }
   </style>
 </head>
 <body>
   <main>
-    <div class="eyebrow">BYTE BACK · 11단계 나만의 접속 앱</div>
+    <div class="eyebrow">BYTE BACK · 12단계 탈환 작전실</div>
     <h1>내 자료실</h1>
     <p>메모는 Supabase에 있고, 서버 함수 <code>/api/notes</code>가 로그인 토큰과 메모 주인을 직접 확인한 뒤에만 읽고 씁니다. 아래 기록은 모두 실습을 위해 만든 가상 자료입니다.</p>
     <div class="notice">이 화면은 브라우저 주소창이나 「앱 설치」로 열 수 있습니다. 앱을 설치했다는 표시만으로는 이 기기를 믿지 않습니다. 기기 승인 여부는 서버와 판정기가 정합니다.</div>
@@ -76,6 +89,16 @@
       <button type="submit">추가</button>
     </form>
     <ul id="notes" aria-live="polite"><li>로그인 상태를 확인하는 중입니다.</li></ul>
+
+    <section class="ops" id="ops" aria-label="탈환 작전실" hidden>
+      <div class="bar" style="margin:0">
+        <h2>탈환 작전실</h2>
+        <button type="button" class="ghost" id="ops-refresh">서버에서 다시 읽기</button>
+      </div>
+      <small>아래 값은 서버 함수 <code>/api/ops</code>의 실제 응답입니다. 「확인됨」은 서버가 실제 기록을 읽은 것, 「미실행」은 이 자료실에서 실행·연결되지 않은 것입니다. 이 화면의 문구는 심판 통과 근거가 아닙니다. 기록은 앞 몇 글자만 보이고 메모 제목·본문은 받지 않습니다.</small>
+      <p id="ops-meta"></p>
+      <div id="ops-body"></div>
+    </section>
   </main>
   <script type="module">
     // 로그인·로그아웃도 서버 함수 /api/session이 합니다. 화면에는 Supabase 주소나 키가 없고,
@@ -208,7 +231,10 @@
       if (!session) device = null;
       const open = showDevice();
       $('#add').hidden = !session || !open;
-      return loadNotes();
+      $('#ops').hidden = !session || !open;
+      if (!session || !open) $('#ops-body').replaceChildren();
+      await loadNotes();
+      if (session && open) await loadOps();
     }
 
     $('#device-request').addEventListener('click', async () => {
@@ -221,6 +247,116 @@
       say('');
       await render();
     });
+
+    // 12단계 탈환 작전실: /api/ops가 돌려준 값만 그립니다. 화면이 숫자를 만들지 않고,
+    // 서버 수치(count 등)와 가린 기록 줄 수를 화면에서 다시 세어 「일치/불일치」만 덧붙입니다.
+    const STATE_TEXT = { confirmed: '확인됨', not_run: '미실행', unavailable: '읽기 실패' };
+    const el = (tag, text, className) => { const n = document.createElement(tag); if (text != null) n.textContent = text; if (className) n.className = className; return n; };
+    const tag = state => el('span', STATE_TEXT[state] ?? '알 수 없음', `tag ${STATE_TEXT[state] ? state : 'unavailable'}`);
+    function compare(label, serverValue, recountValue) {
+      const ok = serverValue === recountValue;
+      const p = el('p');
+      p.append(el('span', ok ? '일치' : '불일치', `tag ${ok ? 'match' : 'mismatch'}`),
+        `${label}: 서버 수치 ${serverValue ?? '-'} / 가린 기록 ${recountValue}줄`);
+      return p;
+    }
+    function table(columns, rows) {
+      const t = el('table');
+      const head = el('tr');
+      for (const [, title] of columns) head.append(el('th', title));
+      t.append(head);
+      for (const row of rows) {
+        const tr = el('tr');
+        for (const [key] of columns) tr.append(el('td', row[key] == null ? '-' : String(row[key])));
+        t.append(tr);
+      }
+      return t;
+    }
+    const countBy = (rows, key) => rows.reduce((acc, row) => { acc[row[key]] = (acc[row[key]] ?? 0) + 1; return acc; }, {});
+    function card(title, section, ...parts) {
+      const a = el('article');
+      const h = el('h3');
+      h.append(tag(section?.state), title);
+      a.append(h);
+      if (section?.source) a.append(el('small', `출처: ${section.source}`));
+      if (section?.reason) a.append(el('p', section.reason));
+      if (section?.state === 'unavailable') a.append(el('p', `오류 코드: ${section.error ?? '-'}`));
+      for (const part of parts) if (part) a.append(part);
+      return a;
+    }
+    function sub(title, section, ...parts) {
+      const d = el('div');
+      const p = el('p');
+      p.append(tag(section?.state), title);
+      d.append(p);
+      if (section?.reason) d.append(el('small', section.reason));
+      for (const part of parts) if (part) d.append(part);
+      return d;
+    }
+    function renderOps(data) {
+      const records = s => (Array.isArray(s?.records) ? s.records : []);
+      const d = data.decider ?? {};
+      const policy = d.policy ?? {};
+      const deciderCard = card('판정기 규칙', d,
+        d.state === 'confirmed' ? compare('규칙 수', d.count, records(d).length) : null,
+        el('p', `규칙: ${records(d).map(r => r.ruleId).join(', ') || '-'}`),
+        sub('검증 사본과 대조', policy,
+          policy.state === 'confirmed' ? el('p', `검증 사본 ${policy.verifiedSnapshot ?? '-'} (커밋 ${policy.verifiedCommit ?? '-'}) · 판정기 ${policy.deciderMatchesVerified ? '같음' : '다름'} · 허용 경로 ${policy.allowedRoutesMatchVerified ? '같음' : '다름'}`) : null,
+          policy.dbPolicy ? sub('DB 정책 대조', policy.dbPolicy) : null),
+        sub('심판 판정', d.judge));
+
+      const t = data.detection ?? {};
+      const detectCard = card('탐지 사건', t,
+        compare('받은 사건', t.count, records(t).length),
+        el('p', `회수 제안: ${t.proposals ?? 0}건`));
+
+      const r = data.revocation ?? {};
+      const rRows = records(r);
+      const rBy = countBy(rRows, 'status');
+      const revokeCard = card('회수 상태 (내 기기)', r,
+        r.state === 'confirmed' ? compare('기기 줄', r.count, rRows.length) : null,
+        ...(r.state === 'confirmed' ? ['pending', 'approved', 'revoked'].map(k =>
+          compare({ pending: '승인 대기', approved: '승인됨', revoked: '회수됨' }[k], r.counts?.[k] ?? 0, rBy[k] ?? 0)) : []),
+        rRows.length ? table([['device', '기기 번호'], ['status', '상태'], ['requestedAt', '요청 시각'], ['approvedAt', '승인 시각']], rRows) : null,
+        sub('탐지에 따른 회수 집행', r.detectRevocation));
+
+      const s = data.restore ?? {};
+      const sRows = records(s);
+      const sBy = countBy(sRows, 'result');
+      const audit = s.audit ?? {};
+      const restoreCard = card('복구 버전', s,
+        s.state === 'confirmed' ? compare('내 메모 복원 기록', s.count, sRows.length) : null,
+        ...(s.state === 'confirmed' ? Object.keys({ ...s.byResult, ...sBy }).map(k => compare(`결과 ${k}`, s.byResult?.[k] ?? 0, sBy[k] ?? 0)) : []),
+        sRows.length ? table([['at', '시각'], ['note', '메모 ID'], ['result', '결과'], ['reason', '사유'], ['before', '이전 해시'], ['after', '이후 해시']], sRows) : null,
+        sub('정책 검증 사본 버전', s.policyVersion,
+          s.policyVersion?.state === 'confirmed' ? el('p', `사본 ${s.policyVersion.snapshot} · 커밋 ${s.policyVersion.commit} · ${s.policyVersion.createdAt ?? '-'}`) : null),
+        sub('정책 되돌리기 기록 (audit.log)', audit,
+          audit.state === 'confirmed' ? compare('기록', audit.count, records(audit).length) : null,
+          records(audit).length ? table([['at', '시각'], ['action', '동작'], ['after', '되돌린 뒤 해시'], ['hashMatchesVerified', '검증 사본과 같음'], ['checksPassed', '통과'], ['checksTotal', '전체']], records(audit)) : null));
+
+      $('#ops-body').replaceChildren(deciderCard, detectCard, revokeCard, restoreCard);
+    }
+    async function loadOps() {
+      $('#ops-meta').textContent = '서버에서 읽는 중입니다.';
+      let response;
+      let data = {};
+      try {
+        response = await fetch('/api/ops', { headers: { Authorization: `Bearer ${session?.accessToken ?? ''}` }, cache: 'no-store' });
+        data = await response.json().catch(() => ({}));
+      } catch {
+        $('#ops-meta').textContent = '서버에 연결하지 못했습니다. 작전실 값은 비워 둡니다.';
+        $('#ops-body').replaceChildren();
+        return;
+      }
+      if (!response.ok) {
+        $('#ops-meta').textContent = `응답 ${response.status} ${data.error ?? ''}: 작전실 값은 비워 둡니다.`;
+        $('#ops-body').replaceChildren();
+        return;
+      }
+      $('#ops-meta').textContent = `응답 ${response.status} · 서버 시각 ${data.generatedAt ?? '-'}`;
+      renderOps(data);
+    }
+    $('#ops-refresh').addEventListener('click', () => loadOps());
 
     // 토큰은 메모리에만 둡니다. 브라우저 저장소에는 쓰지 않습니다.
     function setSession(next) {

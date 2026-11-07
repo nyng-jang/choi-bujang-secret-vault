@@ -30,7 +30,7 @@
 export const RULE_IDS = Object.freeze(['device_registered', 'resource_zone', 'unusual_access', 'step_up_required', 'starter.deny']);
 
 // 내 자료실 읽기만 허용합니다. 추가·수정·삭제는 기본 거부입니다.
-const METHODS = new Set(['GET', 'DELETE']);
+const METHODS = new Set(['GET']);
 
 // 서비스별로 허용하는 정확한 경로 모양입니다. 여기에 없는 서비스·경로는 거부합니다.
 const ZONE_ROUTES = Object.freeze({

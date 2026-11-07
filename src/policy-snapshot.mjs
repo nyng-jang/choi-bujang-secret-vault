@@ -103,3 +103,35 @@ export function diffSnapshots(verifiedTexts, otherTexts) {
   return POLICY_FILES.map((name) => ({ name, changes: diffLines(verifiedTexts[name], otherTexts[name]) }))
     .filter((file) => file.changes.length > 0);
 }
+
+// 복원 계획: 검증한 사본과 다른 줄만 모읍니다. 같은 파일은 계획에 들어가지 않아 쓰지도 않습니다.
+// code는 「두 사본의 전체 해시 + 바뀔 줄」로 만든 8글자 확인 코드입니다. 미리 본 뒤 사본이 또 바뀌면 코드가 달라집니다.
+export function restorePlan(verified, target) {
+  const files = diffSnapshots(verified.texts, target.texts);
+  const code = sha256(JSON.stringify({
+    from: verified.manifest.snapshotSha256, to: target.manifest.snapshotSha256, files,
+  })).slice(0, 8);
+  return { files, code, untouched: POLICY_FILES.filter((name) => !files.some((f) => f.name === name)) };
+}
+
+// 바뀐 줄만 되돌린 글: 비교 대상에만 있는 줄(+)은 빼고, 검증한 사본에만 있던 줄(-)은 제자리에 다시 넣습니다.
+// 바뀌지 않은 줄은 비교 대상의 줄을 그대로 씁니다.
+export function revertLines(verifiedText, targetText) {
+  const a = normalize(verifiedText).split('\n');
+  const b = normalize(targetText).split('\n');
+  const changes = diffLines(verifiedText, targetText);
+  const removed = new Set(changes.filter((c) => c.type === '+').map((c) => c.line));
+  const restored = new Map();
+  for (const c of changes.filter((x) => x.type === '-')) restored.set(c.line, c.text);
+  const out = [];
+  let i = 0; // 검증한 사본 줄 위치
+  for (let j = 0; j <= b.length; j += 1) {
+    while (restored.has(i + 1)) { out.push(restored.get(i + 1)); i += 1; }
+    if (j === b.length) break;
+    if (removed.has(j + 1)) continue;
+    out.push(b[j]); i += 1;
+  }
+  const text = out.join('\n');
+  if (text !== a.join('\n')) throw new Error('바뀐 줄만 되돌린 결과가 검증한 사본과 다릅니다.');
+  return text;
+}

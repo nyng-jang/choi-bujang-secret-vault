@@ -11,8 +11,8 @@
   "files": [
     {
       "name": "decider.mjs",
-      "sha256": "3c53e9d2ed252824c00332b3761928a44f9aa7f7a290c69bbd5a67d95d2d364a",
-      "bytes": 9352
+      "sha256": "4ed2f609c8a44cb3ab1bfa6acfcb4185215cb813a21218078b21a022270f946d",
+      "bytes": 9342
     },
     {
       "name": "allowed-routes.json",
@@ -25,5 +25,7 @@
       "bytes": 1341
     }
   ],
-  "snapshotSha256": "070b17d61caa2d96c1e44251cf6b08baead6b9996c114728dbd53a983276a2f0"
+  "snapshotSha256": "226888c1b4811d8f9543726da4a129d86450fba2f4b0f9f90d6b50d9ca2abcd0",
+  "restoredFrom": "226888c1b4811d8f9543726da4a129d86450fba2f4b0f9f90d6b50d9ca2abcd0",
+  "restoredAt": "2026-11-07T08:55:49.033Z"
 }

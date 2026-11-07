@@ -59,9 +59,9 @@
 | 3 | 자료가 돌아왔는지: 복원 기록 | Supabase > SQL Editor, `public.notes_restore_log` 조회 | `restored`(바뀜, 해시가 사본과 같음) 뒤 `unchanged` | 2026-11-07 09:07:43 `restored`, 09:08:13 `unchanged`, 둘 다 해시 `39509e69…` 일치(학생 실행) |
 | 4 | B 메모 복원 요청 | 배포 화면에 B로 로그인 > F12 Console, `POST /api/notes/1cd59ee0-e1a1-4d81-a1fc-1bfc3a6ffdb0/restore` | 200, `matches: true`, 이미 같으면 `unchanged` | 2026-11-07 09:08 200 `unchanged`, `matches: true`(학생 실행) |
 | 5 | 로컬 시험 `npm run decider:test`, `detect:test`, `fixture:7`, `test:r5` | PC PowerShell, 저장소 폴더 | 통과 4줄, 통과 6줄, 정상 allow·복합 이상 step_up, pass 2 | 2026-11-07 커밋 `e2c75e0`에서 코딩 도구가 실행: 모두 정상 |
-| 6 | 1~9단계 실제 배포 자기 점검 20개(`/data.json` 메모 없음, 토큰 없는 읽기·추가·삭제 401, 가짜 토큰 401, 화면 코드의 직접 자료 호출 0곳, 판정기·탐지 로컬 점검 등) | PC PowerShell, 저장소 폴더 맨 위에 `bundle-notes.json`을 두고 `npm.cmd run bundle` → `artifacts/submission.json` | 실행한 점검은 모두 기대값, 토큰이 필요한 점검은 묶음 안에서도 미실행 | 미실행(복구 뒤 아직 실행 안 함. 마지막 실행은 10단계 전 2026-11-07 08:36, 커밋 `13657d1`) |
-| 7 | A가 자기 메모 목록·한 건 읽기 | 배포 화면에 A로 로그인 | 내 메모만 보임 | 미실행(복구 뒤 아직 실행 안 함) |
-| 8 | B가 A 메모 한 건 읽기 | 배포 화면에 B로 로그인 > F12 Console, `GET /api/notes/<A 메모 ID>` | 403 `NOTE_FORBIDDEN` | 미실행(복구 뒤 아직 실행 안 함) |
+| 6 | 1~9단계 실제 배포 자기 점검 20개(`/data.json` 메모 없음, 토큰 없는 읽기·추가·삭제 401, 가짜 토큰 401, 화면 코드의 직접 자료 호출 0곳, 판정기·탐지 로컬 점검 등) | PC PowerShell, 저장소 폴더 맨 위에 `bundle-notes.json`을 두고 `npm.cmd run bundle` → `artifacts/submission.json` | 실행한 점검은 모두 기대값, 토큰이 필요한 점검은 묶음 안에서도 미실행 | 2026-11-07 09:15 저장점 `cf064e8`에서 학생 노트북으로 실행: 실제 요청 8개 기대대로 거부, 로컬 확인 6개 기대대로, 6개는 묶음 안에서 미실행(토큰·운영 엔진 필요) |
+| 7 | A가 자기 메모 목록·한 건 읽기 | 배포 화면에 A로 로그인 | 내 메모만 보임 | 2026-11-07 09:20 A 토큰으로 `GET /api/notes` → 200, 메모 4건(학생 Console 실행, ID만 출력) |
+| 8 | B가 A 메모 한 건 읽기 | 배포 화면에 B로 로그인 > F12 Console, `GET /api/notes/<A 메모 ID>` | 403 `NOTE_FORBIDDEN` | 2026-11-07 09:20 B 토큰으로 A 메모 한 건 → 403 `NOTE_FORBIDDEN`(학생 Console 실행) |
 | 9 | 공개용 키로 원본 Data API 직접 읽기·추가, 미등록 기기 실제 접속, 재로그인 전 실제 차단, 운영 반 엔진의 접속 회수 | 심판·운영 엔진 | 모두 거부 | 미실행(자동 점검에 공개용 키가 없고, 나머지는 심판·운영 엔진이 맡음) |
 
 ## 9단계 기록 「도플갱어를 찾고 권한을 거둡니다」

@@ -37,6 +37,22 @@
   3. 그 한 행만 사본 내용으로 고치거나(지워졌으면 같은 ID로 다시 넣고), 다시 읽어 ID·주인·내용 해시를 사본과 대조합니다. 응답은 `{id, result, matches, check, contentSha256, logged}`이고 메모 문장·주인 ID는 돌려주지 않습니다. 다른 메모는 건드리지 않고, 결과마다 복원 기록 한 줄을 추가합니다.
 - 확인은 시험 계정 B의 이 메모로만 합니다. 판정기 `allowedRoutes`와 `restoreRoute`에는 아직 넣지 않았습니다.
 
+### 10단계 복구 뒤 다시 확인 순서
+
+정책·자료를 되돌린 뒤 1~9단계의 정상 요청은 그대로 되고 막던 요청은 다시 거부되는지 아래 순서로 확인합니다. 「이번 결과」에는 실제로 실행한 것만 적고, 실행하지 않은 것은 「미실행」으로 둡니다. 로컬 시험은 심판 판정이 아닙니다.
+
+| 순서 | 무엇을 | 어디서 | 정상 결과 | 이번 결과 |
+|---|---|---|---|---|
+| 1 | 정책이 돌아왔는지: `npm run policy:restore`, `npm run policy:diff`, `git diff 13657d1 -- src/decider.mjs aleph.config.json` | PC PowerShell, 저장소 폴더(`npm.cmd run …`) | 「바뀔 항목 0개」, 「차이가 없습니다」, git 출력 없음(운영 정책이 검증한 버전 그대로) | 2026-11-07 커밋 `e2c75e0`에서 코딩 도구가 실행: 세 가지 모두 정상 |
+| 2 | 시험 정책에서 A·B 요청 다시 판정 | `npm run policy:restore -- --apply <코드>` 출력 | A 자기 메모 읽기 allow, B→A 읽기·지우기 deny | 2026-11-07 08:55 되돌릴 때 코딩 도구가 실행: 세 건 통과(로컬 사본 판정) |
+| 3 | 자료가 돌아왔는지: 복원 기록 | Supabase > SQL Editor, `public.notes_restore_log` 조회 | `restored`(바뀜, 해시가 사본과 같음) 뒤 `unchanged` | 2026-11-07 09:07:43 `restored`, 09:08:13 `unchanged`, 둘 다 해시 `39509e69…` 일치(학생 실행) |
+| 4 | B 메모 복원 요청 | 배포 화면에 B로 로그인 > F12 Console, `POST /api/notes/1cd59ee0-e1a1-4d81-a1fc-1bfc3a6ffdb0/restore` | 200, `matches: true`, 이미 같으면 `unchanged` | 2026-11-07 09:08 200 `unchanged`, `matches: true`(학생 실행) |
+| 5 | 로컬 시험 `npm run decider:test`, `detect:test`, `fixture:7`, `test:r5` | PC PowerShell, 저장소 폴더 | 통과 4줄, 통과 6줄, 정상 allow·복합 이상 step_up, pass 2 | 2026-11-07 커밋 `e2c75e0`에서 코딩 도구가 실행: 모두 정상 |
+| 6 | 1~9단계 실제 배포 자기 점검 20개(`/data.json` 메모 없음, 토큰 없는 읽기·추가·삭제 401, 가짜 토큰 401, 화면 코드의 직접 자료 호출 0곳, 판정기·탐지 로컬 점검 등) | PC PowerShell, 저장소 폴더 맨 위에 `bundle-notes.json`을 두고 `npm.cmd run bundle` → `artifacts/submission.json` | 실행한 점검은 모두 기대값, 토큰이 필요한 점검은 묶음 안에서도 미실행 | 미실행(복구 뒤 아직 실행 안 함. 마지막 실행은 10단계 전 2026-11-07 08:36, 커밋 `13657d1`) |
+| 7 | A가 자기 메모 목록·한 건 읽기 | 배포 화면에 A로 로그인 | 내 메모만 보임 | 미실행(복구 뒤 아직 실행 안 함) |
+| 8 | B가 A 메모 한 건 읽기 | 배포 화면에 B로 로그인 > F12 Console, `GET /api/notes/<A 메모 ID>` | 403 `NOTE_FORBIDDEN` | 미실행(복구 뒤 아직 실행 안 함) |
+| 9 | 공개용 키로 원본 Data API 직접 읽기·추가, 미등록 기기 실제 접속, 재로그인 전 실제 차단, 운영 반 엔진의 접속 회수 | 심판·운영 엔진 | 모두 거부 | 미실행(자동 점검에 공개용 키가 없고, 나머지는 심판·운영 엔진이 맡음) |
+
 ## 현재 단계: 9단계 「도플갱어를 찾고 권한을 거둡니다」
 
 - 탐지 입력(커밋 `61fa493`): `src/detect.mjs`의 `readEvent`·`readEvents`가 사건마다 `docs/DETECT_EVENTS.md`의 `at`(시각), `method`(요청 종류), `identity.sub`(가명 사용자) 세 값만 꺼냅니다. 네트워크·기기·지역·본문·토큰 같은 다른 칸은 읽지 않고, 세 값의 형식이 맞지 않는 사건은 세지 않으며, 기록·출력은 하지 않습니다.

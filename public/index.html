@@ -79,10 +79,10 @@
   </main>
   <script type="module">
     // 로그인·로그아웃도 서버 함수 /api/session이 합니다. 화면에는 Supabase 주소나 키가 없고,
-    // 내 로그인 토큰만 이 탭의 sessionStorage에 둡니다(탭을 닫으면 사라짐).
+    // 11단계: 내 로그인 토큰은 브라우저 저장소에 넣지 않고 이 화면의 메모리(변수)에만 둡니다.
+    // 새로고침하거나 탭을 닫으면 사라지므로 다시 로그인합니다.
     // 11단계: 기기 비밀값은 서버가 HttpOnly 쿠키로만 주고받습니다. 이 화면 코드는 그 값을 읽거나
     // 저장하지 않으며, 기기 승인 상태는 /api/device가 알려 준 값만 그대로 보여 줍니다.
-    const SESSION_KEY = 'byteback.session';
     const $ = selector => document.querySelector(selector);
     const list = $('#notes');
     const status = $('#status');
@@ -222,20 +222,13 @@
       await render();
     });
 
+    // 토큰은 메모리에만 둡니다. 브라우저 저장소에는 쓰지 않습니다.
     function setSession(next) {
       session = next;
-      try {
-        if (next) sessionStorage.setItem(SESSION_KEY, JSON.stringify(next));
-        else sessionStorage.removeItem(SESSION_KEY);
-      } catch { /* 저장소를 못 쓰면 이 화면에서만 유지 */ }
     }
 
+    // 저장소에서 꺼내 오지 않습니다. 화면을 새로 열면 언제나 로그인 전 상태입니다.
     function savedSession() {
-      try {
-        const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) ?? 'null');
-        // 만료된 토큰은 버리고 다시 로그인하게 합니다.
-        if (typeof saved?.accessToken === 'string' && saved.expiresAt > Date.now() / 1000 + 30) return saved;
-      } catch { /* 없음 */ }
       return null;
     }
 

@@ -49,6 +49,7 @@ export async function runAttackChecks(config) {
   if (config.step === 8) return zoneChecks(config);
   if (config.step === 9) return detectChecks(config);
   if (config.step === 10) return restoreChecks(config);
+  if (config.step === 11) return appChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   const oldFile = await anonymousGet(app, '/data.json');
@@ -331,5 +332,43 @@ async function restoreChecks(config) {
       observed: `HTTP ${restore.status}, 오류 ${restoreError}, X-Resource-Id ${restoreLeak ? `있음(${restoreLeak})` : '없음'}` },
     { attackId: 'policy_restore_local', expected: '로컬 사본 확인(심판 판정 아님): 검증한 사본 해시 통과, 되돌린 시험 정책과 차이 0줄, 운영 판정기·allowedRoutes가 검증한 사본과 같음',
       observed: policy },
+  ];
+}
+
+// Stage 11: installable app screen + device approval.
+// Two real anonymous requests: the device approval route must refuse a request without a login
+// (and hand out no device cookie), and the deployed screen must carry the manifest while saying
+// that installing is not device approval, with no browser-storage use for keys.
+// Approving a device needs a login token and the owner's Supabase step, which the automatic
+// check never uses; the student checked it on the deployed screen (README).
+// bundle.mjs accepts at most 20 checks, so two 미실행 items give their slots:
+// logged_in_own_note_crud (manual screen check, repeated in the stage-11 README record) and
+// step_up_live_block (the engine's job; decider_step_up_local stays).
+async function appChecks(config) {
+  const dropped = new Set(['logged_in_own_note_crud', 'step_up_live_block']);
+  const checks = (await restoreChecks(config)).filter(item => !dropped.has(item.attackId));
+  const app = appUrl(config);
+  const device = await fetch(new URL('/api/device', app), {
+    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
+  });
+  const deviceBody = await device.text();
+  let deviceError = '없음';
+  try { deviceError = JSON.parse(deviceBody)?.error ?? '없음'; } catch { /* not JSON */ }
+  const cookie = device.headers.get('set-cookie');
+
+  const page = await anonymousGet(app, '/');
+  const manifest = await anonymousGet(app, '/manifest.webmanifest');
+  const worker = await anonymousGet(app, '/sw.js');
+  const linked = /<link[^>]+rel="manifest"[^>]+href="\/manifest\.webmanifest"/u.test(page.text);
+  const notTrust = page.text.includes('설치 여부는 기기 확인이 아닙니다');
+  const storage = [page, worker].reduce((sum, file) => sum
+    + (file.text.match(/localStorage|indexedDB|document\.cookie/gu) ?? []).length, 0);
+  const workerApi = /caches?\.(put|add)\([^)]*\/api/u.test(worker.text);
+  return [
+    ...checks,
+    { attackId: 'anonymous_device_request', expected: '토큰 없는 POST /api/device(기기 승인 요청)는 401 LOGIN_REQUIRED, 기기 쿠키를 주지 않음',
+      observed: `HTTP ${device.status}, 오류 ${deviceError}, Set-Cookie ${cookie ? '있음' : '없음'}` },
+    { attackId: 'app_manifest_screen', expected: '화면(/)이 manifest를 연결하고 「설치 여부는 기기 확인이 아닙니다」를 표시, 화면·sw.js에 localStorage·indexedDB·document.cookie 0곳, sw.js가 /api를 저장하지 않음',
+      observed: `/ HTTP ${page.status}, manifest HTTP ${manifest.status}(이름 ${manifest.data?.short_name ?? '없음'}, ${manifest.data?.display ?? '-'}), 연결 ${linked ? '있음' : '없음'}, 설치≠확인 문구 ${notTrust ? '있음' : '없음'}, 저장소 사용 ${storage}곳, sw /api 저장 ${workerApi ? '있음' : '없음'}` },
   ];
 }

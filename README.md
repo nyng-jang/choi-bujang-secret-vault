@@ -8,7 +8,7 @@
 2. 방어전 1단계 카드의 **Deploy** 버튼을 누릅니다. Vercel에 GitHub로 로그인하고, 새 저장소가 **본인 계정의 Public 저장소**인지 확인한 뒤 Deploy를 누릅니다.
 3. 배포가 끝나면 화면에 나온 `https://…vercel.app` 주소를 방어전 1단계 카드에 붙여넣고 제출합니다. 저장소 주소나 설정 파일은 적지 않습니다.
 
-배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 10단계」를, 지난 단계 기록은 「9단계 기록」, 「8단계 기록」, 「7단계 기록」, 「6단계 기록」, 「5단계 기록」, 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
+배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 11단계」를, 지난 단계 기록은 「10단계 기록」, 「9단계 기록」, 「8단계 기록」, 「7단계 기록」, 「6단계 기록」, 「5단계 기록」, 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
 
 ## 시작 틀의 자동 처리
 
@@ -24,7 +24,37 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
-## 현재 단계: 10단계 「백업에서 자료실을 되살립니다」
+## 현재 단계: 11단계 「나만의 접속 앱을 완성합니다」
+
+지금 쓰는 자료실 화면을 설치형 웹앱으로 다듬고 기기 승인 흐름을 붙였습니다. 따로 설치하는 접속 프로그램은 없습니다. 앱을 설치했다는 표시만으로는 기기를 믿지 않고, 승인 여부는 서버가 정합니다.
+
+- 설치형 화면(커밋 `bfc19ef`): `public/manifest.webmanifest`(이름 「내 자료실 (BYTE BACK)」, 짧은 이름 「내 자료실」, `standalone`), `public/icon.svg`.
+  - `public/sw.js`는 화면 이동이 실패할 때만 `public/offline.html`(「지금은 오프라인입니다」)을 보여 줍니다. 저장하는 것은 `offline.html`과 아이콘뿐이고, 메모·토큰·`/api` 응답은 저장하지 않으며 `/api` 요청은 건드리지 않습니다.
+  - 화면에 「설치 상태」(앱으로 열림/브라우저로 열림, 「설치 여부는 기기 확인이 아닙니다」)와 「기기 승인」을 따로 보여 줍니다. 설치 상태 값은 기기 승인 칸을 바꾸지 않습니다.
+- 기기 승인(커밋 `c8966c9`, `src/device-approval.mjs`, `api/device.js`):
+  1. 로그인한 화면이 `GET /api/device`로 「이 사람 + 이 기기」 상태(`none`·`pending`·`approved`·`revoked`)를 서버에 묻고, 서버 답을 그대로 보여 줍니다. 승인 전에는 메모 API를 부르지 않고 「기기 승인 전에는 자료를 보여 주지 않습니다」만 보여 줍니다.
+  2. 「이 기기 승인 요청」은 `POST /api/device`입니다. 서버가 무작위 기기 비밀값을 만들어 `HttpOnly; Secure; SameSite=Strict; Path=/api` 쿠키로만 주고, DB `public.device_registrations`에는 그 SHA-256과 `pending`, 비밀이 아닌 기기 번호(16자리)만 적습니다. 서버 코드는 `pending`만 만듭니다.
+  3. 승인은 자료실 주인이 Supabase > SQL Editor에서 그 기기 번호의 `pending`을 `approved`로 바꿔서만 합니다. 화면 버튼·요청 본문·머리글로는 승인되지 않습니다.
+  4. `api/notes.js`와 `api/restore.js`는 로그인 확인 바로 뒤에 서버가 기기 승인을 확인합니다. 승인된 기기가 아니면 403 `DEVICE_NOT_APPROVED`(메모 0건), 확인을 못 하면 503 `DEVICE_CHECK_UNAVAILABLE`로 닫힙니다.
+  - 기기 비밀값·토큰은 화면 코드가 읽지 못하고(`document.cookie` 빈 값), `localStorage`·IndexedDB는 쓰지 않습니다.
+  - 심판 토큰(운영 측 ES256 서명)은 `docs/DECIDER_REQUEST.md`대로 운영 릴레이가 판정기보다 먼저 기기를 확인하므로 이 기기 표로 다시 막지 않습니다(`relay_checked`).
+  - 기기 표를 만드는 SQL과 승인 SQL은 Git에 넣지 않았습니다. 표는 RLS 켬, 정책 0개, `anon`·`authenticated` 직접 권한 0개입니다.
+- 학생 확인(2026-11-07, 배포 화면, 자동 점검 기록 아님):
+  - 15:35 설치형 화면: 로그아웃 `GET /api/notes` 401, A 내 메모 목록, B→A 403, 설치해도 「기기 승인: 승인 안 됨」, 오프라인 화면.
+  - 16:08 기기 승인: A 승인 전 「승인 안 됨」·메모 없음, 승인 요청 뒤 「승인 대기 중」, 승인 전 `GET /api/notes` 403 `DEVICE_NOT_APPROVED` → Supabase에서 승인 → 「승인됨」, 기존 화면, 200. B도 같은 순서로 승인한 뒤 B→A 403, 로그아웃 401.
+- 판정기 `src/decider.mjs`와 `RULE_IDS`(`device_registered`, `resource_zone`, `unusual_access`, `step_up_required`, `starter.deny`), `notes` DB 정책은 10단계와 같습니다.
+- `aleph.config.json`: `step` 11. 배포 주소, `identityProvider`, `allowedRoutes`(세 경로), `originalApiUrl`, `restoreRoute`, `judgeIssuer`는 10단계와 같습니다. `/api/device`는 판정기 구역 표에 넣지 않아 `allowedRoutes` 밖이며, 서버 함수가 로그인을 직접 확인합니다.
+- 자기 점검(`src/attack-check.mjs`) 20개: 10단계의 20개에서 미실행 두 개를 빼고 새 점검 두 개를 더했습니다.
+  - 뺀 것: `logged_in_own_note_crud`(토큰을 쓰지 않아 미실행, 위 학생 확인에 기록), `step_up_live_block`(운영 엔진이 맡아 미실행, 로컬 `decider_step_up_local`은 그대로).
+  - 더한 것: `anonymous_device_request`(토큰 없는 승인 요청이 401이고 기기 쿠키를 주지 않는지, 실제 요청), `app_manifest_screen`(배포 화면의 manifest 연결, 「설치 여부는 기기 확인이 아닙니다」 문구, 화면·`sw.js`의 브라우저 저장소 사용 0곳, 실제 요청).
+- 다시 실행: 노트북 PowerShell에서 저장소 폴더(`C:\Users\jny\Documents\choi-bujang-secret-vault`)로 이동해 `git pull` → `npm.cmd run decider:test`, `npm.cmd run detect:test`, `npm.cmd run policy:diff`. 그다음 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `npm.cmd run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다. 기기 승인은 화면에서 요청한 뒤 Supabase > SQL Editor에서 기기 번호로 승인합니다.
+- 해결 안 된 시험과 약점:
+  - 로그인 토큰은 아직 화면 탭의 `sessionStorage`에 있습니다(3단계부터). 기기 비밀값은 브라우저 저장소에 없지만, 토큰도 HttpOnly 쿠키로 옮기는 일은 하지 않았습니다.
+  - 요청 서명은 없습니다. 서명 없는 앱 요청, 서명 뒤 경로·본문 바꿔치기를 막는 장치는 아직 없습니다.
+  - 승인 요청 횟수 제한이 없어 로그인한 사람이 `pending` 줄을 여러 개 만들 수 있습니다(승인은 되지 않음).
+  - 10단계까지의 약점(반 공지·강사 자료 API 없음, 화면이 쓰는 경로가 `allowedRoutes` 밖, `npm run test:package` 실패, 무차별 로그인 보너스 제작 3에서 멈춤, 운영 반 엔진의 사건 전달·회수 미연결)은 그대로입니다. `npm run test:package`는 `api/device.js`도 기준 목록에 없어서 실패합니다.
+
+## 10단계 기록 「백업에서 자료실을 되살립니다」
 
 3차 침공(가상 메모와 안전 정책 변조)을 흉내 내고, 침해 전에 검증한 사본에서 대상만 되살렸습니다. 감사 기록은 덧붙이기만 합니다.
 

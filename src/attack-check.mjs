@@ -47,6 +47,7 @@ export async function runAttackChecks(config) {
   if (config.step === 6) return deviceChecks(config);
   if (config.step === 7) return stepUpChecks(config);
   if (config.step === 8) return zoneChecks(config);
+  if (config.step === 9) return detectChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   const oldFile = await anonymousGet(app, '/data.json');
@@ -260,5 +261,27 @@ async function zoneChecks(config) {
       observed: `src/access.mjs 호출 결과: 남의 메모 ${others.allowed ? '허용' : `거부·${others.reason}`}, 학생 공지 쓰기 ${noticeByStudent.allowed ? '허용' : `거부·${noticeByStudent.reason}`}` },
     { attackId: 'other_owner_live', expected: 'B 토큰으로 A 메모 GET /api/notes/:id를 직접 요청하면 403 NOTE_FORBIDDEN',
       observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 브라우저 Console에서 직접 확인' },
+  ];
+}
+
+// Stage 9: src/detect.mjs proposes revocation (burst_read) only when one
+// pseudonymous user's GET events exceed 120 inside any 10-minute window.
+// bundle.mjs accepts at most 20 checks, so the stage-8 duplicate of the
+// B→A memo check (other_owner_live, also 미실행) gives its slot to this one.
+async function detectChecks(config) {
+  const checks = (await zoneChecks(config)).filter(item => item.attackId !== 'other_owner_live');
+  const { detect } = await import('./detect.mjs');
+  const start = Date.UTC(2026, 9, 1, 0, 0, 0);
+  const reads = (count, seconds, sub = 'practice_sub_a') => Array.from({ length: count }, (_, index) => ({
+    at: new Date(start + index * seconds * 1000).toISOString(), method: 'GET', identity: { sub } }));
+  const show = answer => [answer?.action, answer?.reasonCode].filter(Boolean).join('·');
+  const exactly120 = detect(reads(120, 2));
+  const burst = detect(reads(121, 2));
+  const mixed = detect([...reads(100, 2), ...reads(100, 2, 'practice_sub_b')]);
+  const slow = detect(reads(200, 7));
+  return [
+    ...checks,
+    { attackId: 'detect_burst_read', expected: '로컬 가상 사건(심판 판정·실제 회수 아님): 같은 가명 GET 10분 121건 이상만 propose_revocation·burst_read, 120건·두 사용자 각 100건·느린 조회는 observe',
+      observed: `src/detect.mjs 호출 결과: 120건 ${show(exactly120)}, 121건 ${show(burst)}, 두 사용자 각 100건 ${show(mixed)}, 느린 200건 ${show(slow)}. 운영 반 엔진의 사건 전달·접속 회수는 이 환경에 없어 미실행` },
   ];
 }

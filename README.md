@@ -8,7 +8,7 @@
 2. 방어전 1단계 카드의 **Deploy** 버튼을 누릅니다. Vercel에 GitHub로 로그인하고, 새 저장소가 **본인 계정의 Public 저장소**인지 확인한 뒤 Deploy를 누릅니다.
 3. 배포가 끝나면 화면에 나온 `https://…vercel.app` 주소를 방어전 1단계 카드에 붙여넣고 제출합니다. 저장소 주소나 설정 파일은 적지 않습니다.
 
-배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 8단계」를, 지난 단계 기록은 「7단계 기록」, 「6단계 기록」, 「5단계 기록」, 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
+배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 9단계」를, 지난 단계 기록은 「8단계 기록」, 「7단계 기록」, 「6단계 기록」, 「5단계 기록」, 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
 
 ## 시작 틀의 자동 처리
 
@@ -24,15 +24,30 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
-## 현재 단계: 8단계 「자료마다 갈 수 있는 구역을 나눕니다」
+## 현재 단계: 9단계 「도플갱어를 찾고 권한을 거둡니다」
+
+- 탐지 입력(커밋 `61fa493`): `src/detect.mjs`의 `readEvent`·`readEvents`가 사건마다 `docs/DETECT_EVENTS.md`의 `at`(시각), `method`(요청 종류), `identity.sub`(가명 사용자) 세 값만 꺼냅니다. 네트워크·기기·지역·본문·토큰 같은 다른 칸은 읽지 않고, 세 값의 형식이 맞지 않는 사건은 세지 않으며, 기록·출력은 하지 않습니다.
+- 탐지 규칙 `burst_read`(커밋 `4fa7c04`): 같은 `identity.sub`의 `GET` 사건을 `at` 시각만으로 움직이는 10분 창에 세어 120건을 넘으면 `{ action: 'propose_revocation', reasonCode: 'burst_read', subject }`, 그 밖에는 `{ action: 'observe' }`만 돌려줍니다. 정확히 120건, 다른 사용자 합산, 10분 밖 사건은 의심이 아닙니다.
+  - 첫 사건과 끝 사건이 정확히 10분 떨어지면 같은 창으로 세지 않고, 여러 사용자가 넘으면 먼저 넘은 한 사용자를 돌려줍니다(원고에 없어 정한 값).
+  - 탐지기는 회수를 제안만 합니다. 판정기 `src/decider.mjs`의 응답 형식, API, 기기 권한, DB는 8단계와 같고 회수 API는 만들지 않았습니다. `burst_read`는 판정기 규칙이 아니므로 `RULE_IDS`는 8단계와 같은 `device_registered`, `resource_zone`, `unusual_access`, `step_up_required`, `starter.deny`입니다.
+- `aleph.config.json`: `step` 9. 배포 주소, `identityProvider`, `allowedRoutes`(세 경로), `originalApiUrl`, `judgeIssuer`는 8단계와 같고 `restoreRoute`는 비어 있습니다.
+- 자기 점검(`src/attack-check.mjs`) 20개: 8단계의 20개에서 `other_owner_live`(B→A 메모 직접 요청, 미실행)를 빼고 탐지 로컬 가상 사건 1개를 더했습니다. 제출 묶음은 점검을 20개까지만 받고, 같은 공격은 4단계의 `cross_owner_note_access`(미실행)로 남아 있습니다. 탐지 점검은 120건·121건·두 사용자 각 100건·느린 200건의 결과를 기록하며 심판 판정이나 실제 회수가 아니고, 운영 반 엔진의 사건 전달·접속 회수는 「미실행」입니다.
+- 다시 실행: PC의 Git Bash에서 저장소 폴더(`C:\Users\User\choi-bujang-secret-vault`)로 이동해 `git pull` → `npm run detect:test`(정상: `통과` 여섯 줄) → `npm run decider:test`(정상: `통과` 네 줄). 그다음 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.
+- 해결 안 된 시험과 약점:
+  - `npm run detect:test`가 통과해도 운영 반 엔진이 검증한 사건을 전달하거나 회수 제안을 집행하는 경로는 연결·시험하지 않았습니다.
+  - 8단계의 약점(반 공지·강사 자료 API 없음, 화면이 쓰는 경로가 `allowedRoutes` 밖, `npm run test:package` 실패, 무차별 로그인 보너스 제작 3에서 멈춤)은 그대로입니다.
+
+2026-11-07 커밋 `4fa7c04`에서 `detect:test` 6개, `decider:test` 4개 통과를 확인했습니다. 가상 사건·요청 연습이며 심판 판정이 아닙니다.
+
+## 8단계 기록 「자료마다 갈 수 있는 구역을 나눕니다」
 
 - 자원 ID(커밋 `eb9a82a`): `src/resources.mjs`가 서버가 확인한 경로만 보고 구역 이름표를 정합니다. 내 메모 목록 `notes/mine`, 메모 한 건 `notes/<번호>`, 반 공지 `notices/<번호>`, 강사 자료 `materials/<번호>`이고, 그 밖은 이름표 없음(거부)입니다. `/api/notes`는 로그인 확인 뒤 응답 머리글 `X-Resource-Id`에 이 값을 붙입니다.
 - 판정기 구역 규칙 `resource_zone`(커밋 `e7eb209`): 서비스와 정확한 경로 모양만 허용합니다. 메모는 `GET /notes/:id`만(전체 목록·쓰기 거부), 반 공지는 `GET /notices`, `GET /notices/:id`만(쓰기는 누구에게나 거부), 강사 자료와 알 수 없는 경로는 모두 거부합니다. `path`가 경로 모양과 칸마다 같아야 하고, ID 형식은 좁히지 않으며 쿼리는 쓰지 않습니다. 메모 주인 비교는 판정기에 넣지 않았습니다.
   - `RULE_IDS`: `device_registered`, `resource_zone`, `unusual_access`, `step_up_required`, `starter.deny`. 6·7단계 규칙은 그대로입니다.
 - 자료 API 마지막 대조(커밋 `990d225`): `src/access.mjs`가 검증된 토큰 사용자와 저장된 값만 대조합니다. 메모는 `notes.owner_id`(아니면 `not_owner`), 반 공지 쓰기와 강사 자료는 DB `public.instructors` 표에 저장된 강사만(아니면 `not_instructor`)입니다. 화면 메뉴와 요청 본문·머리글·쿼리의 `role`은 읽지 않습니다. 거부하면 서버 기록에 `notes: deny <사유>`만 남깁니다.
   - 2026-11-04 학생이 배포된 화면의 브라우저 Console에서 B 토큰으로 A 메모를 직접 요청해 `403`을 확인했습니다(자동 점검 기록 아님).
-- `aleph.config.json`: `step` 8. 배포 주소, `identityProvider`, `originalApiUrl`, `judgeIssuer`는 7단계와 같습니다. `allowedRoutes`는 판정기가 허용하는 `GET /api/notes/:id`, `GET /api/notices`, `GET /api/notices/:id` 세 개입니다.
-- 자기 점검(`src/attack-check.mjs`) 20개: 7단계의 16개 + 토큰 없는 메모 한 건 요청에 이름표가 없는지(실제 요청) 1개 + 판정기 구역 규칙 로컬 가상 요청 1개 + `src/access.mjs` 로컬 호출 1개(둘 다 심판 판정 아님) + 다른 사람 메모 직접 요청 1개(토큰을 쓰지 않으므로 「미실행」).
+- `aleph.config.json`(8단계 당시): `step` 8. 배포 주소, `identityProvider`, `originalApiUrl`, `judgeIssuer`는 7단계와 같습니다. `allowedRoutes`는 판정기가 허용하는 `GET /api/notes/:id`, `GET /api/notices`, `GET /api/notices/:id` 세 개입니다.
+- 자기 점검(`src/attack-check.mjs`, 8단계 당시) 20개: 7단계의 16개 + 토큰 없는 메모 한 건 요청에 이름표가 없는지(실제 요청) 1개 + 판정기 구역 규칙 로컬 가상 요청 1개 + `src/access.mjs` 로컬 호출 1개(둘 다 심판 판정 아님) + 다른 사람 메모 직접 요청 1개(토큰을 쓰지 않으므로 「미실행」).
 - 다시 실행: PC의 Git Bash에서 저장소 폴더(`C:\Users\User\choi-bujang-secret-vault`)로 이동해 `git pull` → `npm run decider:test`(정상: `통과` 네 줄) → `npm run fixture:7`(정상: `정상 사건: allow`, `복합 이상 사건: step_up`). 그다음 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.
 - 해결 안 된 시험과 약점:
   - 반 공지·강사 자료 API와 자료는 아직 없습니다. 구역 이름과 판정·대조 규칙만 있고, 강사 표 `public.instructors`를 만드는 SQL은 Git에 넣지 않았습니다(아직 읽는 API가 없음).

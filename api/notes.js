@@ -18,12 +18,16 @@
 // stored owner (notes.owner_id) and stored instructor permission
 // (public.instructors). Menu choices and body/header/query role are never read.
 // Denials log one short reason only, e.g. "notes: deny not_owner".
+// Stage 11: after the login check, the server also checks that this device is
+// approved (src/device-approval.mjs, HttpOnly cookie + public.device_registrations).
+// Unapproved devices get 403 DEVICE_NOT_APPROVED and no notes.
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
 import { resourceIdFor } from '../src/resources.mjs';
 import { checkAccess, readInstructor } from '../src/access.mjs';
+import { checkApprovedDevice } from '../src/device-approval.mjs';
 
 const config = JSON.parse(readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'));
 const TITLE_MAX = 100;
@@ -106,6 +110,17 @@ export default async function handler(request, response) {
   if (!user) {
     response.setHeader('WWW-Authenticate', 'Bearer');
     fail(response, 401, 'LOGIN_REQUIRED');
+    return;
+  }
+
+  // Stage 11: no protected data until the server has approved this device.
+  // Fail closed: if the check cannot run, nothing is returned.
+  try {
+    const device = await checkApprovedDevice({ supabase, user, cookieHeader: request.headers.cookie });
+    if (!device.allowed) { deny(response, 403, 'DEVICE_NOT_APPROVED', device.reason); return; }
+  } catch (error) {
+    console.error('notes: device check failed', error?.code ?? 'unknown');
+    fail(response, 503, 'DEVICE_CHECK_UNAVAILABLE');
     return;
   }
 

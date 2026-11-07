@@ -49,6 +49,16 @@
       <div><b>기기 승인</b> <span id="device-state">승인 안 됨</span> <small>승인 여부는 서버와 판정기가 정합니다. 이 화면이 스스로 승인하지 않습니다.</small></div>
     </section>
 
+    <section class="device" id="approval" aria-label="기기 승인 요청" hidden>
+      <div><b>승인 전</b> <span>기기 승인 전에는 자료를 보여 주지 않습니다.</span></div>
+      <p id="approval-help"></p>
+      <div class="actions">
+        <button type="button" id="device-request">이 기기 승인 요청</button>
+        <button type="button" class="ghost" id="device-refresh">상태 다시 확인</button>
+      </div>
+      <small>승인 요청 버튼은 요청만 보냅니다. 자료실 주인이 Supabase에서 이 기기 번호를 승인해야 서버가 자료실을 엽니다.</small>
+    </section>
+
     <form id="login" hidden>
       <label>이메일 <input name="email" type="email" autocomplete="username" required></label>
       <label>비밀번호 <input name="password" type="password" autocomplete="current-password" required></label>
@@ -70,6 +80,8 @@
   <script type="module">
     // 로그인·로그아웃도 서버 함수 /api/session이 합니다. 화면에는 Supabase 주소나 키가 없고,
     // 내 로그인 토큰만 이 탭의 sessionStorage에 둡니다(탭을 닫으면 사라짐).
+    // 11단계: 기기 비밀값은 서버가 HttpOnly 쿠키로만 주고받습니다. 이 화면 코드는 그 값을 읽거나
+    // 저장하지 않으며, 기기 승인 상태는 /api/device가 알려 준 값만 그대로 보여 줍니다.
     const SESSION_KEY = 'byteback.session';
     const $ = selector => document.querySelector(selector);
     const list = $('#notes');
@@ -77,6 +89,7 @@
     const say = text => { status.textContent = text; };
     const line = text => { const item = document.createElement('li'); item.textContent = text; return item; };
     let session = null;
+    let device = null; // 서버가 알려 준 {status, deviceId}. null이면 아직 모름.
 
     async function api(method, path = '', body) {
       const headers = { Authorization: `Bearer ${session?.accessToken ?? ''}` };
@@ -86,6 +99,9 @@
       });
       const data = await response.json().catch(() => ({}));
       if (response.status === 401) { setSession(null); setTimeout(render, 0); throw new Error('로그인이 필요합니다. 다시 로그인해 주세요.'); }
+      if (response.status === 403 && data.error === 'DEVICE_NOT_APPROVED') {
+        device = null; setTimeout(render, 0); throw new Error('이 기기는 아직 승인되지 않았습니다.');
+      }
       if (!response.ok) throw new Error(`요청이 거절되었습니다 (${data.error ?? response.status}).`);
       return data;
     }
@@ -136,6 +152,10 @@
 
     async function loadNotes() {
       if (!session) { list.replaceChildren(line('로그인하면 가상 메모가 보입니다.')); return; }
+      if (device?.status !== 'approved' && device?.status !== 'relay_checked') {
+        list.replaceChildren(line('기기 승인 전에는 자료를 보여 주지 않습니다.'));
+        return;
+      }
       try {
         const notes = await api('GET');
         if (!Array.isArray(notes)) throw new Error('자료 형식이 맞지 않습니다.');
@@ -145,13 +165,62 @@
       }
     }
 
-    function render() {
+    // 서버에 이 사람 + 이 기기의 승인 상태를 묻습니다. 쿠키는 브라우저가 알아서 붙입니다.
+    async function deviceCall(method) {
+      const response = await fetch('/api/device', {
+        method, headers: { Authorization: `Bearer ${session?.accessToken ?? ''}` }, cache: 'no-store',
+      });
+      const data = await response.json().catch(() => ({}));
+      if (response.status === 401) { setSession(null); return null; }
+      if (!response.ok || typeof data.status !== 'string') throw new Error(`기기 상태를 확인하지 못했습니다 (${data.error ?? response.status}).`);
+      return { status: data.status, deviceId: typeof data.deviceId === 'string' ? data.deviceId : null };
+    }
+
+    const DEVICE_TEXT = {
+      none: () => '승인 안 됨 (요청 전)',
+      pending: id => `승인 대기 중 (기기 번호 ${id})`,
+      approved: id => `승인됨: 서버가 이 기기를 등록 기기로 확인함 (기기 번호 ${id})`,
+      revoked: id => `승인 취소됨 (기기 번호 ${id})`,
+      relay_checked: () => '운영 릴레이가 확인한 요청',
+    };
+    function showDevice() {
+      const text = !session ? '승인 안 됨 (로그인하면 서버에 확인합니다)'
+        : !device ? '확인하지 못함 (승인 안 됨으로 봅니다)'
+        : (DEVICE_TEXT[device.status]?.(device.deviceId ?? '-') ?? '승인 안 됨');
+      $('#device-state').textContent = text;
+      const open = device?.status === 'approved' || device?.status === 'relay_checked';
+      $('#approval').hidden = !session || open;
+      $('#device-request').hidden = device?.status === 'pending' || device?.status === 'revoked';
+      $('#approval-help').textContent = device?.status === 'pending'
+        ? `승인 요청을 보냈습니다. 자료실 주인이 Supabase에서 기기 번호 ${device.deviceId}를 승인한 뒤 「상태 다시 확인」을 눌러 주세요.`
+        : device?.status === 'revoked' ? '이 기기의 승인이 취소되었습니다. 자료실 주인에게 확인해 주세요.'
+        : '이 기기는 아직 승인되지 않았습니다. 승인을 요청해 주세요.';
+      return open;
+    }
+
+    async function render() {
       $('#login').hidden = Boolean(session);
       $('#session').hidden = !session;
-      $('#add').hidden = !session;
       $('#who').textContent = session ? `로그인 계정: ${session.email ?? '이메일 없음'}` : '';
+      if (session && !device) {
+        try { device = await deviceCall('GET'); } catch (error) { device = null; say(error.message); }
+      }
+      if (!session) device = null;
+      const open = showDevice();
+      $('#add').hidden = !session || !open;
       return loadNotes();
     }
+
+    $('#device-request').addEventListener('click', async () => {
+      try { device = await deviceCall('POST'); say(device ? '승인 요청을 보냈습니다. 아직 자료는 열리지 않습니다.' : ''); }
+      catch (error) { say(error.message); }
+      await render();
+    });
+    $('#device-refresh').addEventListener('click', async () => {
+      device = null;
+      say('');
+      await render();
+    });
 
     function setSession(next) {
       session = next;
@@ -208,6 +277,7 @@
         return;
       }
       say('');
+      device = null;
       setSession({ accessToken: data.accessToken, expiresAt: data.expiresAt, email: data.email });
       await render();
     });
@@ -217,6 +287,7 @@
         method: 'DELETE', headers: { Authorization: `Bearer ${session?.accessToken ?? ''}` }, cache: 'no-store',
       }).catch(() => null);
       setSession(null);
+      device = null;
       await render();
       say(response?.ok || response?.status === 401 ? '로그아웃했습니다.' : '로그아웃했지만 서버 연결을 확인하지 못했습니다.');
     });

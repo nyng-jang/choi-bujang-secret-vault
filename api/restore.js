@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { createLoginVerifier } from '../src/verify-login.mjs';
 import { restoreNote } from '../src/restore-note.mjs';
+import { checkApprovedDevice } from '../src/device-approval.mjs';
 
 const config = JSON.parse(readFileSync(new URL('../aleph.config.json', import.meta.url), 'utf8'));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -39,6 +40,19 @@ export async function handleRestore(request, response, { supabase, verifyLogin }
   if (!user) {
     response.setHeader('WWW-Authenticate', 'Bearer');
     response.status(401).json({ error: 'LOGIN_REQUIRED' });
+    return;
+  }
+  // 11단계: 서버가 이 기기를 승인했을 때만 복원합니다. 확인을 못 하면 멈춥니다.
+  try {
+    const device = await checkApprovedDevice({ supabase, user, cookieHeader: request.headers.cookie });
+    if (!device.allowed) {
+      console.warn(`restore: deny ${device.reason}`);
+      response.status(403).json({ error: 'DEVICE_NOT_APPROVED' });
+      return;
+    }
+  } catch (error) {
+    console.error('restore: device check failed', error?.code ?? 'unknown');
+    response.status(503).json({ error: 'DEVICE_CHECK_UNAVAILABLE' });
     return;
   }
   const id = request.query?.id;

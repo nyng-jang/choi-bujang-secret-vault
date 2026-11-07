@@ -8,7 +8,7 @@
 2. 방어전 1단계 카드의 **Deploy** 버튼을 누릅니다. Vercel에 GitHub로 로그인하고, 새 저장소가 **본인 계정의 Public 저장소**인지 확인한 뒤 Deploy를 누릅니다.
 3. 배포가 끝나면 화면에 나온 `https://…vercel.app` 주소를 방어전 1단계 카드에 붙여넣고 제출합니다. 저장소 주소나 설정 파일은 적지 않습니다.
 
-배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 9단계」를, 지난 단계 기록은 「8단계 기록」, 「7단계 기록」, 「6단계 기록」, 「5단계 기록」, 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
+배포가 끝나면 `/`에서 점령된 가상 자료실을 볼 수 있습니다. 1단계에서는 `/data.json`에 같은 가상 메모가 공개되었습니다. 이 공개 상태를 확인하는 것이 1단계의 출발점입니다. 1단계 접수와 심판 판정은 포털에서 확인합니다. 지금 상태는 아래 「현재 단계: 10단계」를, 지난 단계 기록은 「9단계 기록」, 「8단계 기록」, 「7단계 기록」, 「6단계 기록」, 「5단계 기록」, 「4단계 기록」, 「3단계 기록」, 「2단계 기록」을 보세요.
 
 ## 시작 틀의 자동 처리
 
@@ -24,9 +24,9 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
-## 10단계 작업 중 「백업에서 자료실을 되살립니다」
+## 현재 단계: 10단계 「백업에서 자료실을 되살립니다」
 
-저장점 전 기록입니다. `aleph.config.json`은 아직 `step` 9이고 `restoreRoute`는 비어 있습니다.
+3차 침공(가상 메모와 안전 정책 변조)을 흉내 내고, 침해 전에 검증한 사본에서 대상만 되살렸습니다. 감사 기록은 덧붙이기만 합니다.
 
 - 안전 정책 사본(커밋 `5572304`, `108546d`): `npm run policy:backup`이 `src/decider.mjs` 규칙, `allowedRoutes`, DB 접근 정책을 `policy-backups/verified`에 SHA-256 목록표와 함께 찍었습니다(커밋 `13657d1`, 전체 해시 `226888c1b4811d8f9543726da4a129d86450fba2f4b0f9f90d6b50d9ca2abcd0`). `npm run policy:diff`는 시험용 사본과의 차이만, `npm run policy:restore`는 바뀔 항목과 확인 코드를 먼저 보여 준 뒤 `--apply <코드>`로 바뀐 줄만 되돌리고 `policy-backups/audit.log`에 덧붙입니다. 실제 운영 정책은 바꾸지 않습니다.
 - 메모 복원 대상: 시험 계정 B의 가상 메모 한 건, ID `1cd59ee0-e1a1-4d81-a1fc-1bfc3a6ffdb0`(사본 내용 해시 `39509e693024f7ee09fc5ba366a397f9a2aba44cfd156104051594085460c6dc`, 2026-11-07 09:01 UTC에 뜸).
@@ -35,7 +35,18 @@
   1. 로그인 토큰을 검증하고, `:id`가 위 복원 대상 ID가 아니면 403 `RESTORE_NOT_ALLOWED`입니다.
   2. 사본의 내용 해시를 다시 계산해 다르면 409 `BACKUP_MISMATCH`, 사본 주인이 요청한 사람이 아니면 403 `NOTE_FORBIDDEN`, 지금 행의 주인이 사본과 다르면 409 `OWNER_CONFLICT`로 멈춥니다.
   3. 그 한 행만 사본 내용으로 고치거나(지워졌으면 같은 ID로 다시 넣고), 다시 읽어 ID·주인·내용 해시를 사본과 대조합니다. 응답은 `{id, result, matches, check, contentSha256, logged}`이고 메모 문장·주인 ID는 돌려주지 않습니다. 다른 메모는 건드리지 않고, 결과마다 복원 기록 한 줄을 추가합니다.
-- 확인은 시험 계정 B의 이 메모로만 합니다. 판정기 `allowedRoutes`와 `restoreRoute`에는 아직 넣지 않았습니다.
+- 확인은 시험 계정 B의 이 메모로만 합니다. 2026-11-07 학생이 배포 화면에서 B로 메모를 고친 뒤 복원해 09:07 `restored`, 다시 눌러 09:08 `unchanged`를 받았고, 두 번 모두 ID·주인·내용 해시가 사본과 같았습니다(자동 점검 기록 아님).
+- 판정기 `src/decider.mjs`, `RULE_IDS`(`device_registered`, `resource_zone`, `unusual_access`, `step_up_required`, `starter.deny`), DB의 `notes` 정책·권한은 9단계와 같습니다. 정책을 되돌리는 대상은 시험용 사본뿐입니다.
+- `aleph.config.json`: `step` 10, `restoreRoute` `POST /api/notes/:id/restore`. 배포 주소, `identityProvider`, `allowedRoutes`(세 경로), `originalApiUrl`, `judgeIssuer`는 9단계와 같습니다.
+  - 복원 경로는 판정기 구역 표에 넣지 않아 `allowedRoutes` 밖입니다. 서버 함수가 로그인·대상 ID·사본 해시·주인을 직접 확인합니다. 판정기에 넣으면 검증한 정책 사본과 달라지므로 이번 단계에서는 바꾸지 않았습니다. 심판이 `restoreRoute`를 어떤 모양으로 기대하는지는 문서에 없어 `allowedRoutes`와 같은 「방법 경로」 모양으로 적었습니다.
+- 자기 점검(`src/attack-check.mjs`) 20개: 9단계의 20개에서 미실행 두 개를 빼고 새 점검 두 개를 더했습니다. 제출 묶음은 점검을 20개까지만 받습니다.
+  - 뺀 것: `logged_in_data_api_direct`(토큰을 쓰지 않아 미실행. Data API 직접 권한이 0개인 것은 DB 정책 사본에 남음), `unregistered_device_access`(심판이 맡아 미실행. 로컬 `decider_device_registered_local`은 그대로).
+  - 더한 것: `anonymous_note_restore`(토큰 없는 복원 요청이 401인지, 실제 요청), `policy_restore_local`(사본 해시, 되돌린 시험 정책과의 차이, 운영 판정기·`allowedRoutes`가 검증한 사본과 같은지, 로컬 확인이며 심판 판정 아님).
+- 다시 실행: PC PowerShell에서 저장소 폴더(`C:\Users\jny\Documents\choi-bujang-secret-vault`)로 이동해 `git pull` → `npm.cmd run policy:diff`(정상: `차이가 없습니다`) → `npm.cmd run policy:restore`(정상: `되돌릴 것이 없습니다`) → `npm.cmd run decider:test`, `npm.cmd run detect:test`. 그다음 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `npm.cmd run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다. PowerShell은 `npm.ps1`을 막으므로 `npm.cmd`를 씁니다.
+- 해결 안 된 시험과 약점:
+  - 확인용 해시가 사본과 같은 폴더에 있어, 사본과 목록표를 함께 바꾸면 사본 검사만으로는 알 수 없습니다. 위 전체 해시를 README와 Git 기록에 남겨 `npm run policy:diff -- --expect <해시>`로 대조할 수 있게 했습니다.
+  - 메모 사본은 B의 한 건뿐이고, 사본을 다시 뜨거나 다른 메모를 고르는 경로는 없습니다(SQL로만).
+  - 9단계까지의 약점(반 공지·강사 자료 API 없음, 화면이 쓰는 경로가 `allowedRoutes` 밖, `npm run test:package` 실패, 무차별 로그인 보너스 제작 3에서 멈춤, 운영 반 엔진의 사건 전달·회수 미연결)은 그대로입니다.
 
 ### 10단계 복구 뒤 다시 확인 순서
 
@@ -53,14 +64,14 @@
 | 8 | B가 A 메모 한 건 읽기 | 배포 화면에 B로 로그인 > F12 Console, `GET /api/notes/<A 메모 ID>` | 403 `NOTE_FORBIDDEN` | 미실행(복구 뒤 아직 실행 안 함) |
 | 9 | 공개용 키로 원본 Data API 직접 읽기·추가, 미등록 기기 실제 접속, 재로그인 전 실제 차단, 운영 반 엔진의 접속 회수 | 심판·운영 엔진 | 모두 거부 | 미실행(자동 점검에 공개용 키가 없고, 나머지는 심판·운영 엔진이 맡음) |
 
-## 현재 단계: 9단계 「도플갱어를 찾고 권한을 거둡니다」
+## 9단계 기록 「도플갱어를 찾고 권한을 거둡니다」
 
 - 탐지 입력(커밋 `61fa493`): `src/detect.mjs`의 `readEvent`·`readEvents`가 사건마다 `docs/DETECT_EVENTS.md`의 `at`(시각), `method`(요청 종류), `identity.sub`(가명 사용자) 세 값만 꺼냅니다. 네트워크·기기·지역·본문·토큰 같은 다른 칸은 읽지 않고, 세 값의 형식이 맞지 않는 사건은 세지 않으며, 기록·출력은 하지 않습니다.
 - 탐지 규칙 `burst_read`(커밋 `4fa7c04`): 같은 `identity.sub`의 `GET` 사건을 `at` 시각만으로 움직이는 10분 창에 세어 120건을 넘으면 `{ action: 'propose_revocation', reasonCode: 'burst_read', subject }`, 그 밖에는 `{ action: 'observe' }`만 돌려줍니다. 정확히 120건, 다른 사용자 합산, 10분 밖 사건은 의심이 아닙니다.
   - 첫 사건과 끝 사건이 정확히 10분 떨어지면 같은 창으로 세지 않고, 여러 사용자가 넘으면 먼저 넘은 한 사용자를 돌려줍니다(원고에 없어 정한 값).
   - 탐지기는 회수를 제안만 합니다. 판정기 `src/decider.mjs`의 응답 형식, API, 기기 권한, DB는 8단계와 같고 회수 API는 만들지 않았습니다. `burst_read`는 판정기 규칙이 아니므로 `RULE_IDS`는 8단계와 같은 `device_registered`, `resource_zone`, `unusual_access`, `step_up_required`, `starter.deny`입니다.
-- `aleph.config.json`: `step` 9. 배포 주소, `identityProvider`, `allowedRoutes`(세 경로), `originalApiUrl`, `judgeIssuer`는 8단계와 같고 `restoreRoute`는 비어 있습니다.
-- 자기 점검(`src/attack-check.mjs`) 20개: 8단계의 20개에서 `other_owner_live`(B→A 메모 직접 요청, 미실행)를 빼고 탐지 로컬 가상 사건 1개를 더했습니다. 제출 묶음은 점검을 20개까지만 받고, 같은 공격은 4단계의 `cross_owner_note_access`(미실행)로 남아 있습니다. 탐지 점검은 120건·121건·두 사용자 각 100건·느린 200건의 결과를 기록하며 심판 판정이나 실제 회수가 아니고, 운영 반 엔진의 사건 전달·접속 회수는 「미실행」입니다.
+- `aleph.config.json`(9단계 당시): `step` 9. 배포 주소, `identityProvider`, `allowedRoutes`(세 경로), `originalApiUrl`, `judgeIssuer`는 8단계와 같고 `restoreRoute`는 비어 있습니다.
+- 자기 점검(`src/attack-check.mjs`, 9단계 당시) 20개: 8단계의 20개에서 `other_owner_live`(B→A 메모 직접 요청, 미실행)를 빼고 탐지 로컬 가상 사건 1개를 더했습니다. 제출 묶음은 점검을 20개까지만 받고, 같은 공격은 4단계의 `cross_owner_note_access`(미실행)로 남아 있습니다. 탐지 점검은 120건·121건·두 사용자 각 100건·느린 200건의 결과를 기록하며 심판 판정이나 실제 회수가 아니고, 운영 반 엔진의 사건 전달·접속 회수는 「미실행」입니다.
 - 다시 실행: PC의 Git Bash에서 저장소 폴더(`C:\Users\User\choi-bujang-secret-vault`)로 이동해 `git pull` → `npm run detect:test`(정상: `통과` 여섯 줄) → `npm run decider:test`(정상: `통과` 네 줄). 그다음 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `npm run bundle`을 실행하면 `artifacts/submission.json`(커밋하지 않음)이 만들어집니다.
 - 해결 안 된 시험과 약점:
   - `npm run detect:test`가 통과해도 운영 반 엔진이 검증한 사건을 전달하거나 회수 제안을 집행하는 경로는 연결·시험하지 않았습니다.

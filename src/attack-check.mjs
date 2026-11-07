@@ -48,6 +48,7 @@ export async function runAttackChecks(config) {
   if (config.step === 7) return stepUpChecks(config);
   if (config.step === 8) return zoneChecks(config);
   if (config.step === 9) return detectChecks(config);
+  if (config.step === 10) return restoreChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   const oldFile = await anonymousGet(app, '/data.json');
@@ -283,5 +284,52 @@ async function detectChecks(config) {
     ...checks,
     { attackId: 'detect_burst_read', expected: '로컬 가상 사건(심판 판정·실제 회수 아님): 같은 가명 GET 10분 121건 이상만 propose_revocation·burst_read, 120건·두 사용자 각 100건·느린 조회는 observe',
       observed: `src/detect.mjs 호출 결과: 120건 ${show(exactly120)}, 121건 ${show(burst)}, 두 사용자 각 100건 ${show(mixed)}, 느린 200건 ${show(slow)}. 운영 반 엔진의 사건 전달·접속 회수는 이 환경에 없어 미실행` },
+  ];
+}
+
+// Stage 10: restore from the verified backup.
+// One real anonymous POST checks that the restore route refuses requests without a login.
+// The policy copies are checked locally (hashes, test-copy difference, live decider and
+// allowedRoutes against the verified copy); this is not a sent request or the judge's result.
+// B's real restore needs B's login token, which the automatic check never uses.
+// bundle.mjs accepts at most 20 checks, so two 미실행 items whose attack is covered elsewhere
+// give their slots: logged_in_data_api_direct (direct Data API grants are in the DB policy copy,
+// grants none) and unregistered_device_access (the judge's job; decider_device_registered_local stays).
+async function restoreChecks(config) {
+  const dropped = new Set(['logged_in_data_api_direct', 'unregistered_device_access']);
+  const checks = (await detectChecks(config)).filter(item => !dropped.has(item.attackId));
+  const app = appUrl(config);
+  const { RESTORE_TARGET_ID } = await import('./restore-note.mjs');
+  const restore = await fetch(new URL(`/api/notes/${RESTORE_TARGET_ID}/restore`, app), {
+    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
+  });
+  const restoreBody = await restore.text();
+  let restoreError = '없음';
+  try { restoreError = JSON.parse(restoreBody)?.error ?? '없음'; } catch { /* not JSON */ }
+  const restoreLeak = restore.headers.get('x-resource-id');
+
+  const { readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { POLICY_FILES, diffSnapshots, normalize, sha256, verifySnapshot } = await import('./policy-snapshot.mjs');
+  const root = new URL('../', import.meta.url);
+  let policy;
+  try {
+    const verified = verifySnapshot(fileURLToPath(new URL('policy-backups/verified', root)), { label: '검증한 사본' });
+    const test = verifySnapshot(fileURLToPath(new URL('policy-backups/test-copy', root)), { label: '시험 정책 사본' });
+    const lines = diffSnapshots(verified.texts, test.texts).reduce((sum, file) => sum + file.changes.length, 0);
+    const byName = Object.fromEntries(verified.manifest.files.map(file => [file.name, file.sha256]));
+    const liveDecider = sha256(normalize(readFileSync(new URL('src/decider.mjs', root), 'utf8'))) === byName['decider.mjs'];
+    const liveRoutes = sha256(`${JSON.stringify({ allowedRoutes: config.allowedRoutes }, null, 2)}\n`) === byName['allowed-routes.json'];
+    const db = JSON.parse(verified.texts['db-policy.json']).tables.find(table => table.table === 'notes');
+    policy = `검증한 사본 해시 확인 통과(파일 ${POLICY_FILES.length}개, 커밋 ${String(verified.manifest.commit).slice(0, 7)}), 시험 정책과 차이 ${lines}줄, 운영 판정기 ${liveDecider ? '같음' : '다름'}, allowedRoutes ${liveRoutes ? '같음' : '다름'}, 사본의 notes RLS ${db?.rlsEnabled ? '켬' : '꺼짐'}·정책 ${db?.policies?.length ?? 0}개·직접 권한 ${db?.grants?.length ?? 0}개`;
+  } catch (error) {
+    policy = `중단: ${error.message}`;
+  }
+  return [
+    ...checks,
+    { attackId: 'anonymous_note_restore', expected: '토큰 없는 POST /api/notes/:id/restore는 401 LOGIN_REQUIRED, X-Resource-Id 머리글 없음, 메모를 되돌리지 않음',
+      observed: `HTTP ${restore.status}, 오류 ${restoreError}, X-Resource-Id ${restoreLeak ? `있음(${restoreLeak})` : '없음'}` },
+    { attackId: 'policy_restore_local', expected: '로컬 사본 확인(심판 판정 아님): 검증한 사본 해시 통과, 되돌린 시험 정책과 차이 0줄, 운영 판정기·allowedRoutes가 검증한 사본과 같음',
+      observed: policy },
   ];
 }

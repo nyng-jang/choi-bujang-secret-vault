@@ -5,9 +5,11 @@
   "outputDirectory": "public",
   "functions": {
     "api/notes.js": { "includeFiles": "aleph.config.json" },
-    "api/session.js": { "includeFiles": "aleph.config.json" }
+    "api/session.js": { "includeFiles": "aleph.config.json" },
+    "api/restore.js": { "includeFiles": "aleph.config.json" }
   },
   "rewrites": [
+    { "source": "/api/notes/:id/restore", "destination": "/api/restore?id=:id" },
     { "source": "/api/notes/:id", "destination": "/api/notes?id=:id" }
   ],
   "headers": [

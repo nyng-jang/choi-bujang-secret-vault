@@ -24,6 +24,19 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
+## 10단계 작업 중 「백업에서 자료실을 되살립니다」
+
+저장점 전 기록입니다. `aleph.config.json`은 아직 `step` 9이고 `restoreRoute`는 비어 있습니다.
+
+- 안전 정책 사본(커밋 `5572304`, `108546d`): `npm run policy:backup`이 `src/decider.mjs` 규칙, `allowedRoutes`, DB 접근 정책을 `policy-backups/verified`에 SHA-256 목록표와 함께 찍었습니다(커밋 `13657d1`, 전체 해시 `226888c1b4811d8f9543726da4a129d86450fba2f4b0f9f90d6b50d9ca2abcd0`). `npm run policy:diff`는 시험용 사본과의 차이만, `npm run policy:restore`는 바뀔 항목과 확인 코드를 먼저 보여 준 뒤 `--apply <코드>`로 바뀐 줄만 되돌리고 `policy-backups/audit.log`에 덧붙입니다. 실제 운영 정책은 바꾸지 않습니다.
+- 메모 복원 대상: 시험 계정 B의 가상 메모 한 건, ID `1cd59ee0-e1a1-4d81-a1fc-1bfc3a6ffdb0`(사본 내용 해시 `39509e693024f7ee09fc5ba366a397f9a2aba44cfd156104051594085460c6dc`, 2026-11-07 09:01 UTC에 뜸).
+  - 비공개 사본은 Supabase `public.notes_backup`(서버 키로 읽기만, 공개용 키·로그인 토큰 접근 없음)에 있고, 복원 기록은 `public.notes_restore_log`(서버 키로도 추가만)에 남습니다. 메모 문장이 들어 있어 사본과 만든 SQL은 Git에 넣지 않았습니다.
+- 복원 경로: 서비스 `notes`, `POST /api/notes/:id/restore`(서버 함수 `api/restore.js`, `src/restore-note.mjs`). 본문은 읽지 않습니다.
+  1. 로그인 토큰을 검증하고, `:id`가 위 복원 대상 ID가 아니면 403 `RESTORE_NOT_ALLOWED`입니다.
+  2. 사본의 내용 해시를 다시 계산해 다르면 409 `BACKUP_MISMATCH`, 사본 주인이 요청한 사람이 아니면 403 `NOTE_FORBIDDEN`, 지금 행의 주인이 사본과 다르면 409 `OWNER_CONFLICT`로 멈춥니다.
+  3. 그 한 행만 사본 내용으로 고치거나(지워졌으면 같은 ID로 다시 넣고), 다시 읽어 ID·주인·내용 해시를 사본과 대조합니다. 응답은 `{id, result, matches, check, contentSha256, logged}`이고 메모 문장·주인 ID는 돌려주지 않습니다. 다른 메모는 건드리지 않고, 결과마다 복원 기록 한 줄을 추가합니다.
+- 확인은 시험 계정 B의 이 메모로만 합니다. 판정기 `allowedRoutes`와 `restoreRoute`에는 아직 넣지 않았습니다.
+
 ## 현재 단계: 9단계 「도플갱어를 찾고 권한을 거둡니다」
 
 - 탐지 입력(커밋 `61fa493`): `src/detect.mjs`의 `readEvent`·`readEvents`가 사건마다 `docs/DETECT_EVENTS.md`의 `at`(시각), `method`(요청 종류), `identity.sub`(가명 사용자) 세 값만 꺼냅니다. 네트워크·기기·지역·본문·토큰 같은 다른 칸은 읽지 않고, 세 값의 형식이 맞지 않는 사건은 세지 않으며, 기록·출력은 하지 않습니다.

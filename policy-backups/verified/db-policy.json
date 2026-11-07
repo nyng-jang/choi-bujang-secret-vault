@@ -1,0 +1,53 @@
+{
+  "schema": "public",
+  "tables": [
+    {
+      "table": "notes",
+      "rlsEnabled": true,
+      "rlsForced": false,
+      "policies": [
+        {
+          "name": "notes_delete_own",
+          "command": "DELETE",
+          "roles": [
+            "authenticated"
+          ],
+          "permissive": "PERMISSIVE",
+          "using": "(( SELECT auth.uid() AS uid) = owner_id)",
+          "withCheck": null
+        },
+        {
+          "name": "notes_insert_own",
+          "command": "INSERT",
+          "roles": [
+            "authenticated"
+          ],
+          "permissive": "PERMISSIVE",
+          "using": null,
+          "withCheck": "(( SELECT auth.uid() AS uid) = owner_id)"
+        },
+        {
+          "name": "notes_select_own",
+          "command": "SELECT",
+          "roles": [
+            "authenticated"
+          ],
+          "permissive": "PERMISSIVE",
+          "using": "(( SELECT auth.uid() AS uid) = owner_id)",
+          "withCheck": null
+        },
+        {
+          "name": "notes_update_own",
+          "command": "UPDATE",
+          "roles": [
+            "authenticated"
+          ],
+          "permissive": "PERMISSIVE",
+          "using": "(( SELECT auth.uid() AS uid) = owner_id)",
+          "withCheck": "(( SELECT auth.uid() AS uid) = owner_id)"
+        }
+      ],
+      "grants": []
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "kind": "verified",
+  "step": 9,
+  "commit": "13657d1b4192d97d99247482c2942f1a2d5bd59a",
+  "createdAt": "2026-11-07T08:52:11.333Z",
+  "sources": {
+    "decider.mjs": "src/decider.mjs",
+    "allowed-routes.json": "aleph.config.json allowedRoutes",
+    "db-policy.json": "Supabase public 스키마 RLS·정책·권한(읽기 전용 내보내기)"
+  },
+  "files": [
+    {
+      "name": "decider.mjs",
+      "sha256": "4ed2f609c8a44cb3ab1bfa6acfcb4185215cb813a21218078b21a022270f946d",
+      "bytes": 9342
+    },
+    {
+      "name": "allowed-routes.json",
+      "sha256": "70b57ec519dcb95784225ac755d8687b5a9bf4c973300c0cb47803eceb8e212b",
+      "bytes": 106
+    },
+    {
+      "name": "db-policy.json",
+      "sha256": "bc1725548c40d82f6de4fda4695b6c4e3a9ea28762d323c3873455a6523958e6",
+      "bytes": 1341
+    }
+  ],
+  "snapshotSha256": "226888c1b4811d8f9543726da4a129d86450fba2f4b0f9f90d6b50d9ca2abcd0"
+}

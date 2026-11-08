@@ -1,5 +1,6 @@
 // The student changes this check as each stage adds an attack to the same app.
 // Never return tokens, private keys, real names, or note bodies.
+import { randomUUID } from 'node:crypto';
 const SECRET_LIKE = /\bsb_secret_[A-Za-z0-9_-]{12,}|\beyJ[A-Za-z0-9_-]{12,}\.eyJ/u;
 
 function appUrl(config) {
@@ -206,7 +207,7 @@ async function deviceChecks(config) {
   const { fixtureRequests } = await import('../scripts/fixture-7.mjs');
   const { normal } = fixtureRequests();
   const registered = await decide(normal);
-  const unregistered = await decide({ ...normal, requestId: crypto.randomUUID(), deviceRegistered: false });
+  const unregistered = await decide({ ...normal, requestId: randomUUID(), deviceRegistered: false });
   const show = answer => `${answer?.decision}·${answer?.reasonCode}`;
   return [
     ...checks,
@@ -226,7 +227,7 @@ async function stepUpChecks(config) {
   const { decide } = await import('./decider.mjs');
   const { fixtureRequests } = await import('../scripts/fixture-7.mjs');
   const { normal, suspicious } = fixtureRequests();
-  const fresh = () => crypto.randomUUID();
+  const fresh = () => randomUUID();
   const ordinary = await decide(normal);
   const unusual = await decide(suspicious);
   const again = await decide({ ...suspicious, requestId: fresh(),
@@ -262,7 +263,7 @@ async function zoneChecks(config) {
   const { decide } = await import('./decider.mjs');
   const { fixtureRequests } = await import('../scripts/fixture-7.mjs');
   const { normal } = fixtureRequests();
-  const ask = (service, method, route, path) => decide({ ...normal, requestId: crypto.randomUUID(),
+  const ask = (service, method, route, path) => decide({ ...normal, requestId: randomUUID(),
     service, method, route, path });
   const ownNote = await ask('notes', 'GET', 'GET /notes/:id', '/notes/demo');
   const noteList = await ask('notes', 'GET', 'GET /notes', '/notes');

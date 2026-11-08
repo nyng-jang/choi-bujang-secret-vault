@@ -29,18 +29,19 @@ async function anonymousGet(app, path, init = {}) {
   init = rest;
   const timeout = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? { signal: AbortSignal.timeout(10000) } : {};
-  const response = await fetch(new URL(path, app), { ...init, redirect: 'error', ...timeout });
+  const url = new URL(path, app).href; // 문자열 주소로 보내고, 같은 주소를 기록에 적습니다.
+  const response = await fetch(url, { ...init, redirect: 'error', ...timeout });
   const text = await response.text();
   let data = null;
   try { data = JSON.parse(text); } catch { /* not JSON */ }
   const at = new Date().toISOString(); // 확인 시각: 응답을 다 받은 시각(UTC)
   const requestId = response.headers?.get?.('x-vercel-id') ?? null;
-  return { status: response.status, text, data, requestId, at, method: init.method ?? 'GET', path, check };
+  return { status: response.status, text, data, requestId, at, method: init.method ?? 'GET', path, url, check };
 }
 
 // 점검 기록(observed)에 그 점검이 보낸 요청 하나를 그대로 적습니다. 없는 값은 지어내지 않습니다.
 function evidence(res, detail = '') {
-  return `${res.check ? `[${res.check}] ` : ''}${res.method} ${res.path} → HTTP ${res.status} · 요청 ID ${res.requestId ?? '없음(응답 머리글에 없음)'} · 확인 시각 ${res.at}`
+  return `${res.check ? `[${res.check}] ` : ''}${res.method} ${res.url ?? res.path} → HTTP ${res.status} · 요청 ID ${res.requestId ?? '없음(응답 머리글에 없음)'} · 확인 시각 ${res.at}`
     + (detail ? ` · ${detail}` : '');
 }
 

@@ -17,6 +17,9 @@ function appUrl(config) {
   return app;
 }
 
+// 보내지 않은 점검의 observed 값입니다(쓰기 점검은 실행하지 않으면 not_run).
+const NOT_RUN = 'not_run';
+
 async function anonymousGet(app, path, init = {}) {
   const response = await fetch(new URL(path, app), {
     ...init, redirect: 'error', signal: AbortSignal.timeout(10000),
@@ -68,13 +71,20 @@ export async function runAttackChecks(config) {
 
 // A token anyone can write: right-looking claims, no valid signature.
 // The server must reject it because it verifies, not just decodes.
+// 12단계: 심판의 격리 환경에는 Node 전용 Buffer가 없으므로 웹 표준 TextEncoder·btoa로 base64url을 만듭니다.
+function base64url(text) {
+  let binary = '';
+  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '');
+}
+
 function unsignedToken(config) {
-  const part = value => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const part = value => base64url(JSON.stringify(value));
   const now = Math.floor(Date.now() / 1000);
   return `${part({ alg: 'none', typ: 'JWT' })}.${part({
     iss: config.identityProvider?.issuer, aud: 'authenticated', role: 'authenticated',
     sub: '00000000-0000-4000-8000-000000000000', iat: now, exp: now + 600,
-  })}.${Buffer.from('not-a-signature').toString('base64url')}`;
+  })}.${base64url('not-a-signature')}`;
 }
 
 async function loginChecks(config) {
@@ -85,13 +95,7 @@ async function loginChecks(config) {
   const forged = await anonymousGet(app, '/api/notes', {
     headers: { Authorization: `Bearer ${unsignedToken(config)}` },
   });
-  const write = await anonymousGet(app, '/api/notes', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: '비로그인 추가 시도', body: '거절되어야 함' }),
-  });
-  const remove = await anonymousGet(app, '/api/notes/00000000-0000-4000-8000-000000000000', {
-    method: 'DELETE',
-  });
+  // 12단계: 자기 점검은 공개 HTTPS GET·HEAD만 보냅니다. 쓰기(POST·DELETE) 점검은 보내지 않고 not_run으로 남깁니다.
   const result = ({ status, data, text }) => `HTTP ${status}, 메모 ${noteCount(data)}건, `
     + `오류 ${typeof data?.error === 'string' ? data.error : '없음'}`
     + (SECRET_LIKE.test(text) ? ', 응답에 키 형태 값 있음' : '');
@@ -103,9 +107,9 @@ async function loginChecks(config) {
     { attackId: 'forged_token_api_notes', expected: '서명 없는 가짜 토큰의 GET /api/notes는 401 LOGIN_REQUIRED, 메모 0건',
       observed: result(forged) },
     { attackId: 'anonymous_api_notes_write', expected: '토큰 없는 POST /api/notes는 401 LOGIN_REQUIRED, 메모가 추가되지 않음',
-      observed: result(write) },
+      observed: NOT_RUN },
     { attackId: 'anonymous_api_note_delete', expected: '토큰 없는 DELETE /api/notes/:id는 401 LOGIN_REQUIRED',
-      observed: result(remove) },
+      observed: NOT_RUN },
     { attackId: 'logged_in_note_crud', expected: 'A 계정은 내 메모 목록을 보고 POST·PUT·DELETE로 추가·수정·삭제하며, 지운 메모의 GET은 404',
       observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 화면에서 직접 확인' },
   ];
@@ -124,14 +128,9 @@ async function ownerChecks(config) {
   const dataApi = new URL(config.originalApiUrl
     ?? new URL('/rest/v1/notes', new URL(config.identityProvider.issuer).origin));
   let read = null;
-  let write = null;
   if (typeof key === 'string' && key.startsWith('sb_publishable_')) {
     const headers = { apikey: key };
     read = await anonymousGet(dataApi, `${dataApi.pathname}?select=public_id`, { headers });
-    write = await anonymousGet(dataApi, dataApi.pathname, {
-      method: 'POST', headers: { ...headers, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-      body: JSON.stringify({ title: 'anon 직접 추가 시도', content: '거절되어야 함' }),
-    });
   }
   const result = res => res === null
     ? `미실행: 공개용 키 없음 (/login-config.json HTTP ${login.status}, SUPABASE_PUBLISHABLE_KEY 미설정)`
@@ -142,7 +141,7 @@ async function ownerChecks(config) {
     { attackId: 'anon_data_api_notes_read', expected: '공개용 키(anon)로 Data API의 notes를 직접 읽으면 권한 없음(42501), 메모 0건',
       observed: result(read) },
     { attackId: 'anon_data_api_notes_insert', expected: '공개용 키(anon)로 Data API의 notes에 직접 추가하면 권한 없음(42501), 추가되지 않음',
-      observed: result(write) },
+      observed: NOT_RUN },
     { attackId: 'logged_in_own_note_crud', expected: 'A·B 각자 내 메모 목록을 보고 POST·PUT·DELETE로 추가·수정·삭제하며, 지운 메모의 GET은 404',
       observed: '미실행: 자동 점검은 비밀번호나 토큰을 쓰지 않으므로 화면에서 직접 확인' },
     { attackId: 'cross_owner_note_access', expected: 'B 토큰으로 A 메모 id에 GET·PUT·DELETE하면 모두 403 NOTE_FORBIDDEN, A 메모는 그대로',
@@ -301,14 +300,6 @@ async function restoreChecks(config) {
   const dropped = new Set(['logged_in_data_api_direct', 'unregistered_device_access']);
   const checks = (await detectChecks(config)).filter(item => !dropped.has(item.attackId));
   const app = appUrl(config);
-  const { RESTORE_TARGET_ID } = await import('./restore-note.mjs');
-  const restore = await fetch(new URL(`/api/notes/${RESTORE_TARGET_ID}/restore`, app), {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
-  });
-  const restoreBody = await restore.text();
-  let restoreError = '없음';
-  try { restoreError = JSON.parse(restoreBody)?.error ?? '없음'; } catch { /* not JSON */ }
-  const restoreLeak = restore.headers.get('x-resource-id');
 
   const { readFileSync } = await import('node:fs');
   const { fileURLToPath } = await import('node:url');
@@ -330,7 +321,7 @@ async function restoreChecks(config) {
   return [
     ...checks,
     { attackId: 'anonymous_note_restore', expected: '토큰 없는 POST /api/notes/:id/restore는 401 LOGIN_REQUIRED, X-Resource-Id 머리글 없음, 메모를 되돌리지 않음',
-      observed: `HTTP ${restore.status}, 오류 ${restoreError}, X-Resource-Id ${restoreLeak ? `있음(${restoreLeak})` : '없음'}` },
+      observed: NOT_RUN },
     { attackId: 'policy_restore_local', expected: '로컬 사본 확인(심판 판정 아님): 검증한 사본 해시 통과, 되돌린 시험 정책과 차이 0줄, 운영 판정기·allowedRoutes가 검증한 사본과 같음',
       observed: policy },
   ];
@@ -349,13 +340,6 @@ async function appChecks(config) {
   const dropped = new Set(['logged_in_own_note_crud', 'step_up_live_block']);
   const checks = (await restoreChecks(config)).filter(item => !dropped.has(item.attackId));
   const app = appUrl(config);
-  const device = await fetch(new URL('/api/device', app), {
-    method: 'POST', redirect: 'error', signal: AbortSignal.timeout(10000),
-  });
-  const deviceBody = await device.text();
-  let deviceError = '없음';
-  try { deviceError = JSON.parse(deviceBody)?.error ?? '없음'; } catch { /* not JSON */ }
-  const cookie = device.headers.get('set-cookie');
 
   const page = await anonymousGet(app, '/');
   const manifest = await anonymousGet(app, '/manifest.webmanifest');
@@ -368,7 +352,7 @@ async function appChecks(config) {
   return [
     ...checks,
     { attackId: 'anonymous_device_request', expected: '토큰 없는 POST /api/device(기기 승인 요청)는 401 LOGIN_REQUIRED, 기기 쿠키를 주지 않음',
-      observed: `HTTP ${device.status}, 오류 ${deviceError}, Set-Cookie ${cookie ? '있음' : '없음'}` },
+      observed: NOT_RUN },
     { attackId: 'app_manifest_screen', expected: '화면(/)이 manifest를 연결하고 「설치 여부는 기기 확인이 아닙니다」를 표시, 화면·sw.js에 localStorage·indexedDB·document.cookie 0곳, sw.js가 /api를 저장하지 않음',
       observed: `/ HTTP ${page.status}, manifest HTTP ${manifest.status}(이름 ${manifest.data?.short_name ?? '없음'}, ${manifest.data?.display ?? '-'}), 연결 ${linked ? '있음' : '없음'}, 설치≠확인 문구 ${notTrust ? '있음' : '없음'}, 저장소 사용 ${storage}곳, sw /api 저장 ${workerApi ? '있음' : '없음'}` },
   ];

@@ -21,22 +21,26 @@ function appUrl(config) {
 // 보내지 않은 점검의 observed 값입니다(쓰기 점검은 실행하지 않으면 not_run).
 const NOT_RUN = 'not_run';
 
-// 실제로 보낸 요청 하나의 결과입니다. 12단계부터 요청 ID(Vercel x-vercel-id)와 확인 시각(보낸 시각, UTC)도 남깁니다.
+// 실제로 보낸 요청 하나의 결과입니다. 12단계부터 요청 ID(Vercel x-vercel-id)와 확인 시각(응답을 받은 시각, UTC)도 남깁니다.
+// init.check(점검 이름)가 있으면 X-Aleph-Check 머리글로 함께 보내, 심판 쪽 요청 기록에서 점검과 요청을 짝지을 수 있게 합니다.
 async function anonymousGet(app, path, init = {}) {
-  const at = new Date().toISOString();
+  const { check, ...rest } = init;
+  if (check) rest.headers = { ...(rest.headers ?? {}), 'X-Aleph-Check': check };
+  init = rest;
   const timeout = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? { signal: AbortSignal.timeout(10000) } : {};
   const response = await fetch(new URL(path, app), { ...init, redirect: 'error', ...timeout });
   const text = await response.text();
   let data = null;
   try { data = JSON.parse(text); } catch { /* not JSON */ }
+  const at = new Date().toISOString(); // 확인 시각: 응답을 다 받은 시각(UTC)
   const requestId = response.headers?.get?.('x-vercel-id') ?? null;
-  return { status: response.status, text, data, requestId, at, method: init.method ?? 'GET', path };
+  return { status: response.status, text, data, requestId, at, method: init.method ?? 'GET', path, check };
 }
 
 // 점검 기록(observed)에 그 점검이 보낸 요청 하나를 그대로 적습니다. 없는 값은 지어내지 않습니다.
 function evidence(res, detail = '') {
-  return `${res.method} ${res.path} → HTTP ${res.status} · 요청 ID ${res.requestId ?? '없음(응답 머리글에 없음)'} · 확인 시각 ${res.at}`
+  return `${res.check ? `[${res.check}] ` : ''}${res.method} ${res.path} → HTTP ${res.status} · 요청 ID ${res.requestId ?? '없음(응답 머리글에 없음)'} · 확인 시각 ${res.at}`
     + (detail ? ` · ${detail}` : '');
 }
 
@@ -400,14 +404,14 @@ async function opsChecks(config) {
   const errorOf = res => (typeof res.data?.error === 'string' ? res.data.error : '없음');
   const keyLike = /\bsb_publishable_[A-Za-z0-9_-]{10,}|\beyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/gu;
 
-  const dataJson = await anonymousGet(app, '/data.json');
-  const notes = await anonymousGet(app, '/api/notes');
-  const forged = await anonymousGet(app, '/api/notes', { headers: { Authorization: `Bearer ${unsignedToken(config)}` } });
-  const oneNote = await anonymousGet(app, '/api/notes/00000000-0000-4000-8000-000000000000');
-  const pageForCalls = await anonymousGet(app, '/');
-  const pageForKeys = await anonymousGet(app, '/');
-  const ops = await anonymousGet(app, '/api/ops');
-  const pageForOps = await anonymousGet(app, '/');
+  const dataJson = await anonymousGet(app, '/data.json', { check: 'anonymous_static_data_json' });
+  const notes = await anonymousGet(app, '/api/notes', { check: 'anonymous_api_notes' });
+  const forged = await anonymousGet(app, '/api/notes', { check: 'forged_token_api_notes', headers: { Authorization: `Bearer ${unsignedToken(config)}` } });
+  const oneNote = await anonymousGet(app, '/api/notes/00000000-0000-4000-8000-000000000000', { check: 'anonymous_resource_id' });
+  const pageForCalls = await anonymousGet(app, '/', { check: 'browser_direct_data_calls' });
+  const pageForKeys = await anonymousGet(app, '/', { check: 'browser_public_key_absent' });
+  const ops = await anonymousGet(app, '/api/ops', { check: 'anonymous_ops_request' });
+  const pageForOps = await anonymousGet(app, '/', { check: 'app_ops_screen' });
 
   const ok = res => res.status >= 200 && res.status < 300;
   const dataCount = ok(dataJson) ? noteCount(dataJson.data) : 0;

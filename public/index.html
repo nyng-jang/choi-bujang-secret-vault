@@ -385,9 +385,14 @@
       return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
     };
     const short = id => (typeof id === 'string' ? `${id.slice(0, 8)}…` : '-');
+    // 서명 없는 가짜 토큰: npm run bundle 자기 점검(src/attack-check.mjs unsignedToken)과 같은 모양입니다.
+    // 발급자·대상은 aleph.config.json의 공개 값이고, 서명 칸은 진짜 서명이 아닌 글자입니다.
+    const ISSUER = 'https://kvzvodzkgrwavncezuiw.supabase.co/auth/v1';
     const fakeToken = () => {
       const part = obj => btoa(JSON.stringify(obj)).replace(/=+$/u, '').replace(/\+/gu, '-').replace(/\//gu, '_');
-      return `${part({ alg: 'none', typ: 'JWT' })}.${part({ sub: 'regression-fake', exp: 4102444800 })}.`;
+      const now = Math.floor(Date.now() / 1000);
+      return `${part({ alg: 'none', typ: 'JWT' })}.${part({ iss: ISSUER, aud: 'authenticated', role: 'authenticated',
+        sub: '00000000-0000-4000-8000-000000000000', iat: now, exp: now + 600 })}.${btoa('not-a-signature').replace(/=+$/u, '')}`;
     };
     async function probe({ method = 'GET', path, token = session?.accessToken, body, omitCookie = false }) {
       const headers = {};

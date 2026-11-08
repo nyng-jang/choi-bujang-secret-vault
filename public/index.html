@@ -98,6 +98,17 @@
       <small>아래 값은 서버 함수 <code>/api/ops</code>의 실제 응답입니다. 「확인됨」은 서버가 실제 기록을 읽은 것, 「미실행」은 이 자료실에서 실행·연결되지 않은 것입니다. 이 화면의 문구는 심판 통과 근거가 아닙니다. 기록은 앞 몇 글자만 보이고 메모 제목·본문은 받지 않습니다.</small>
       <p id="ops-meta"></p>
       <div id="ops-body"></div>
+      <article id="reg">
+        <h3>1~11단계 회귀 확인표</h3>
+        <small>버튼을 누르면 이 브라우저가 배포된 자료실에 정상·금지 요청을 실제로 보내고, 응답 코드와 요청 ID(<code>x-vercel-id</code>)를 그대로 적습니다. 1부는 A 계정, 2부는 로그아웃 뒤 B 계정으로 같은 화면에서 실행합니다(새로고침하면 표가 사라집니다). 보내지 않은 시험은 「미실행」이며 통과가 아닙니다. 41종 총공세는 심판이 실행합니다.</small>
+        <div class="actions">
+          <button type="button" id="reg-a">1부 실행 (A 계정)</button>
+          <button type="button" id="reg-b">2부 실행 (B 계정)</button>
+          <button type="button" class="ghost" id="reg-csv">표 내려받기 (CSV)</button>
+        </div>
+        <p id="reg-meta"></p>
+        <div id="reg-body"></div>
+      </article>
     </section>
   </main>
   <script type="module">
@@ -357,6 +368,177 @@
       renderOps(data);
     }
     $('#ops-refresh').addEventListener('click', () => loadOps());
+
+    // 12단계 회귀 확인표: 1~11단계의 정상·금지 요청을 실제로 보내고 응답만 적습니다.
+    // - 판정은 「기대와 같음 / 다름 / 미실행」뿐입니다. 보내지 않은 줄을 통과로 바꾸지 않습니다.
+    // - 표는 이 화면의 메모리에만 있습니다(브라우저 저장소에 쓰지 않음). 메모 제목·본문, 토큰은 표에 넣지 않고
+    //   메모 ID는 앞 8글자만 적습니다.
+    const RESTORE_TARGET = '1cd59ee0-e1a1-4d81-a1fc-1bfc3a6ffdb0'; // 10단계 B 시험 메모(README에 같은 ID)
+    let regRows = [];
+    let regPart = 'A'; // 지금 실행 중인 부(A·B). 같은 부를 다시 실행하면 그 부의 줄만 새로 씁니다.
+    let aNoteId = null; // 1부에서 고른 A 메모 ID. 2부의 B→A 금지 시험에만 씁니다.
+    // 무작위 v4 UUID(없는 메모 ID용). randomUUID가 없는 브라우저에서도 동작하게 직접 만듭니다.
+    const randomId = () => {
+      const b = crypto.getRandomValues(new Uint8Array(16));
+      b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+      const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+      return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+    };
+    const short = id => (typeof id === 'string' ? `${id.slice(0, 8)}…` : '-');
+    const fakeToken = () => {
+      const part = obj => btoa(JSON.stringify(obj)).replace(/=+$/u, '').replace(/\+/gu, '-').replace(/\//gu, '_');
+      return `${part({ alg: 'none', typ: 'JWT' })}.${part({ sub: 'regression-fake', exp: 4102444800 })}.`;
+    };
+    async function probe({ method = 'GET', path, token = session?.accessToken, body, omitCookie = false }) {
+      const headers = {};
+      if (token) headers.Authorization = `Bearer ${token}`;
+      if (body !== undefined) headers['Content-Type'] = 'application/json';
+      const at = new Date().toISOString();
+      try {
+        const response = await fetch(path, { method, headers, cache: 'no-store', credentials: omitCookie ? 'omit' : 'same-origin',
+          body: body === undefined ? undefined : JSON.stringify(body) });
+        const text = await response.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch { /* JSON이 아닌 응답 */ }
+        return { at, status: response.status, requestId: response.headers.get('x-vercel-id') ?? '-',
+          error: data && !Array.isArray(data) && typeof data.error === 'string' ? data.error : '', data };
+      } catch {
+        return { at, status: 0, requestId: '-', error: 'NETWORK', data: null };
+      }
+    }
+    function addRow(step, kind, account, request, expected, result, ok, note = '') {
+      regRows.push({ part: regPart, step, kind, account, request, expected,
+        actual: result ? `${result.status}${result.error ? ` ${result.error}` : ''}${note ? ` · ${note}` : ''}` : '-',
+        requestId: result?.requestId ?? '-', at: result?.at ?? '-',
+        verdict: result ? (ok ? '기대와 같음' : '기대와 다름') : '미실행' });
+    }
+    function notRun(step, kind, request, expected, reason, part = regPart) {
+      regRows.push({ part, step, kind, account: '-', request, expected, actual: `미실행: ${reason}`, requestId: '-', at: '-', verdict: '미실행' });
+    }
+    const sortedRows = () => [...regRows].sort((x, y) => x.step - y.step); // 단계 순서(같은 단계는 실행 순서)
+    function renderReg() {
+      const counts = countBy(regRows, 'verdict');
+      $('#reg-meta').textContent = regRows.length
+        ? `전체 ${regRows.length}줄 · 기대와 같음 ${counts['기대와 같음'] ?? 0} · 기대와 다름 ${counts['기대와 다름'] ?? 0} · 미실행 ${counts['미실행'] ?? 0}`
+        : '아직 실행하지 않았습니다.';
+      const t = table([['step', '단계'], ['kind', '정상/금지'], ['account', '계정'], ['request', '요청'], ['expected', '기대 결과'],
+        ['actual', '실제 결과'], ['requestId', '요청 ID'], ['at', '확인 시각'], ['verdict', '판정']], sortedRows());
+      $('#reg-body').replaceChildren(...(regRows.length ? [t] : []));
+    }
+    const isDeny = (r, status, error) => r.status === status && (!error || r.error === error);
+
+    async function runPartA() {
+      regPart = 'A';
+      regRows = regRows.filter(row => row.part === 'B');
+      aNoteId = null;
+      $('#reg-meta').textContent = '1부 실행 중입니다.';
+      // 1단계: 공개 data.json에 메모가 없어야 함
+      let r = await probe({ path: '/data.json', token: null });
+      const leaked = Array.isArray(r.data?.notes) && r.data.notes.length > 0;
+      addRow(1, '금지', '없음', 'GET /data.json (비로그인)', '메모 0건 (404 또는 빈 목록)', r, r.status !== 0 && !leaked, leaked ? '메모 있음' : '메모 없음');
+      // 2·3단계: 토큰 없음, 가짜 토큰
+      r = await probe({ path: '/api/notes', token: null });
+      addRow(2, '금지', '없음', 'GET /api/notes (토큰 없음)', '401 LOGIN_REQUIRED', r, isDeny(r, 401, 'LOGIN_REQUIRED'));
+      r = await probe({ path: '/api/notes', token: fakeToken() });
+      addRow(3, '금지', '가짜', 'GET /api/notes (서명 없는 가짜 토큰)', '401 LOGIN_REQUIRED', r, isDeny(r, 401, 'LOGIN_REQUIRED'));
+      r = await probe({ method: 'POST', path: '/api/notes', token: null, body: { title: '확인표', body: '' } });
+      addRow(3, '금지', '없음', 'POST /api/notes (토큰 없음)', '401 LOGIN_REQUIRED, 추가 안 됨', r, isDeny(r, 401, 'LOGIN_REQUIRED'));
+      r = await probe({ method: 'DELETE', path: `/api/notes/${randomId()}`, token: null });
+      addRow(3, '금지', '없음', 'DELETE /api/notes/:id (토큰 없음)', '401 LOGIN_REQUIRED', r, isDeny(r, 401, 'LOGIN_REQUIRED'));
+      // 3·4단계: A 정상 목록
+      r = await probe({ path: '/api/notes' });
+      const list = Array.isArray(r.data) ? r.data : null;
+      addRow(4, '정상', 'A', 'GET /api/notes (내 메모 목록)', '200, 내 메모 목록', r, r.status === 200 && list !== null, list ? `${list.length}건` : '');
+      aNoteId = list?.find(note => typeof note.id === 'string')?.id ?? null;
+      // 4·8단계: 임시 시험 메모 추가 → 수정 → 읽기 → 삭제 → 다시 읽기
+      r = await probe({ method: 'POST', path: '/api/notes', body: { title: '회귀 확인표 임시 메모', body: '12단계 확인 뒤 지웁니다.' } });
+      const tempId = typeof r.data?.id === 'string' ? r.data.id : null;
+      addRow(4, '정상', 'A', 'POST /api/notes (임시 메모 추가)', '201, 새 ID', r, r.status === 201 && Boolean(tempId), tempId ? `ID ${short(tempId)}` : '');
+      if (tempId) {
+        r = await probe({ method: 'PUT', path: `/api/notes/${tempId}`, body: { title: '회귀 확인표 임시 메모 (수정)', body: '수정 확인' } });
+        addRow(4, '정상', 'A', 'PUT /api/notes/:id (내 임시 메모 수정)', '200', r, r.status === 200);
+        r = await probe({ path: `/api/notes/${tempId}` });
+        addRow(8, '정상', 'A', 'GET /api/notes/:id (내 임시 메모 한 건)', '200', r, r.status === 200);
+        r = await probe({ method: 'DELETE', path: `/api/notes/${tempId}` });
+        addRow(4, '정상', 'A', 'DELETE /api/notes/:id (내 임시 메모 삭제)', '200', r, r.status === 200);
+        r = await probe({ path: `/api/notes/${tempId}` });
+        addRow(4, '금지', 'A', 'GET /api/notes/:id (지운 임시 메모)', '404 NOTE_NOT_FOUND', r, isDeny(r, 404, 'NOTE_NOT_FOUND'));
+      } else {
+        notRun(4, '정상', '임시 메모 수정·읽기·삭제', '200', '임시 메모 추가가 실패해 보내지 않음');
+      }
+      // 6·11단계: 쿠키 없는 요청 = 승인되지 않은 기기
+      r = await probe({ path: '/api/notes', omitCookie: true });
+      addRow(6, '금지', 'A', 'GET /api/notes (기기 쿠키 없이)', '403 DEVICE_NOT_APPROVED', r, isDeny(r, 403, 'DEVICE_NOT_APPROVED'));
+      r = await probe({ method: 'POST', path: '/api/device', token: null });
+      addRow(11, '금지', '없음', 'POST /api/device (토큰 없는 승인 요청)', '401 LOGIN_REQUIRED', r, isDeny(r, 401, 'LOGIN_REQUIRED'));
+      r = await probe({ path: '/api/device' });
+      addRow(11, '정상', 'A', 'GET /api/device (이 기기 상태)', '200 approved', r, r.status === 200 && r.data?.status === 'approved', r.data?.status ?? '');
+      // 10·12단계
+      r = await probe({ method: 'POST', path: `/api/notes/${RESTORE_TARGET}/restore`, token: null });
+      addRow(10, '금지', '없음', 'POST /api/notes/:id/restore (토큰 없음)', '401 LOGIN_REQUIRED', r, isDeny(r, 401, 'LOGIN_REQUIRED'));
+      r = await probe({ path: '/api/ops', token: null });
+      addRow(12, '금지', '없음', 'GET /api/ops (토큰 없음)', '401 LOGIN_REQUIRED', r, isDeny(r, 401, 'LOGIN_REQUIRED'));
+      r = await probe({ path: '/api/ops' });
+      addRow(12, '정상', 'A', 'GET /api/ops (탈환 작전실)', '200', r, r.status === 200);
+      addNotRunRows();
+      renderReg();
+      say(aNoteId ? '1부를 마쳤습니다. 로그아웃하고 B 계정으로 로그인한 뒤 2부를 실행하세요(새로고침하지 마세요).'
+        : '1부를 마쳤지만 A 메모가 없어 2부의 B→A 시험은 미실행으로 남습니다.');
+    }
+
+    async function runPartB() {
+      regPart = 'B';
+      regRows = regRows.filter(row => row.part === 'A');
+      $('#reg-meta').textContent = '2부 실행 중입니다.';
+      if (aNoteId) {
+        let r = await probe({ path: `/api/notes/${aNoteId}` });
+        addRow(4, '금지', 'B', `GET /api/notes/${short(aNoteId)} (A 메모 읽기)`, '403 NOTE_FORBIDDEN', r, isDeny(r, 403, 'NOTE_FORBIDDEN'));
+        r = await probe({ method: 'PUT', path: `/api/notes/${aNoteId}`, body: { title: 'B가 고치기 시도', body: '' } });
+        addRow(4, '금지', 'B', `PUT /api/notes/${short(aNoteId)} (A 메모 수정)`, '403 NOTE_FORBIDDEN, A 메모 그대로', r, isDeny(r, 403, 'NOTE_FORBIDDEN'));
+        r = await probe({ method: 'DELETE', path: `/api/notes/${aNoteId}` });
+        addRow(4, '금지', 'B', `DELETE /api/notes/${short(aNoteId)} (A 메모 삭제)`, '403 NOTE_FORBIDDEN, A 메모 그대로', r, isDeny(r, 403, 'NOTE_FORBIDDEN'));
+      } else {
+        notRun(4, '금지', 'B → A 메모 읽기·수정·삭제', '403 NOTE_FORBIDDEN', '1부에서 A 메모 ID를 얻지 못함');
+      }
+      let r = await probe({ path: '/api/notes' });
+      addRow(4, '정상', 'B', 'GET /api/notes (B 내 메모 목록)', '200', r, r.status === 200 && Array.isArray(r.data), Array.isArray(r.data) ? `${r.data.length}건` : '');
+      r = await probe({ method: 'POST', path: `/api/notes/${randomId()}/restore` });
+      addRow(10, '금지', 'B', 'POST /api/notes/:id/restore (복원 대상 아닌 ID)', '403 RESTORE_NOT_ALLOWED', r, isDeny(r, 403, 'RESTORE_NOT_ALLOWED'));
+      r = await probe({ method: 'POST', path: `/api/notes/${RESTORE_TARGET}/restore` });
+      addRow(10, '정상', 'B', `POST /api/notes/${short(RESTORE_TARGET)}/restore (B 시험 메모 복원)`, '200, 사본 해시와 같음', r,
+        r.status === 200 && r.data?.matches === true, r.data?.result ?? '');
+      addNotRunRows();
+      renderReg();
+      say('2부를 마쳤습니다. 표 내려받기로 CSV를 저장할 수 있습니다.');
+    }
+
+    // 이 화면에서 보내지 않는 시험. 실행 결과가 없으므로 언제나 미실행입니다.
+    function addNotRunRows() {
+      regRows = regRows.filter(row => row.part !== 'none');
+      notRun(5, '금지', '공개용 키(anon)로 originalApiUrl 직접 읽기·추가', '42501 권한 없음', '화면에 공개용 키가 없음. npm.cmd run bundle 자기 점검이 맡음', 'none');
+      notRun(5, '금지', '로그인 토큰으로 originalApiUrl 직접 읽기', '42501 권한 없음', '공개용 키가 필요해 이 화면에서 보내지 않음', 'none');
+      notRun(6, '금지', '심판 경로의 미등록 기기 접속', '판정기 deny', '운영 엔진·심판이 실행', 'none');
+      notRun(7, '금지', '평소와 다른 접속의 재로그인 전 차단', 'step_up 뒤 차단', '운영 엔진이 실행', 'none');
+      notRun(9, '금지', '같은 사용자 10분 121건 이상 조회의 실제 회수', '회수', '운영 반 엔진의 사건 전달 미연결', 'none');
+      notRun(12, '금지', '41종 총공세', '41종 모두 방어', '심판이 실행. 이 표는 통과 근거가 아님', 'none');
+    }
+
+    function downloadCsv() {
+      if (!regRows.length) { say('먼저 1부를 실행하세요.'); return; }
+      const columns = ['step', 'kind', 'account', 'request', 'expected', 'actual', 'requestId', 'at', 'verdict'];
+      const head = ['단계', '정상/금지', '계정', '요청', '기대 결과', '실제 결과', '요청 ID', '확인 시각', '판정'];
+      const cell = value => `"${String(value ?? '').replace(/"/gu, '""')}"`;
+      const csv = '\ufeff' + [head.map(cell).join(','), ...sortedRows().map(row => columns.map(c => cell(row[c])).join(','))].join('\r\n');
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      link.download = `regression-${new Date().toISOString().replace(/[:.]/gu, '-')}.csv`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+    }
+    $('#reg-a').addEventListener('click', () => runPartA());
+    $('#reg-b').addEventListener('click', () => runPartB());
+    $('#reg-csv').addEventListener('click', () => downloadCsv());
+    renderReg();
 
     // 토큰은 메모리에만 둡니다. 브라우저 저장소에는 쓰지 않습니다.
     function setSession(next) {

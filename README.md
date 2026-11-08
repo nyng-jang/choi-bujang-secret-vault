@@ -24,6 +24,75 @@
 
 `src/decider.mjs`와 `src/detect.mjs`의 로컬 시험은 반 엔진이나 운영 심판의 결과가 아닙니다. 1단계 이후 제출 묶음 계약 `aleph.defense.submission.v2`는 `scripts/bundle.mjs`에 남아 있으며, 코딩 도구가 해당 단계의 최신 배포 주소와 Git 원격을 맞춘 뒤 사용합니다.
 
+## 12단계: 설치·실행·중지·복구 안내 (기준 커밋 `fd61433`)
+
+이 안내의 기준은 2026-11-08 08:34 회귀 확인표로 검사한 커밋 `fd61433`입니다(29줄 중 기대와 같음 23, 기대와 다름 0, 미실행 6, 아래 「12단계 진행 중」 절차). 이 안내를 적은 README 커밋은 문서만 바꿉니다.
+
+### 누가 만든 것인가 (출처 구분)
+
+| 구분 | 무엇 | 파일·위치 |
+|---|---|---|
+| 학생 몫 (이 저장소, 학생이 코딩 도구와 작성) | 판정기 규칙 `device_registered`·`resource_zone`·`unusual_access`·`step_up_required` | `src/decider.mjs` (시작 틀의 `starter.deny` 기본 거부 위에 6~8단계에서 추가) |
+| 학생 몫 | 탐지 규칙 `burst_read` | `src/detect.mjs` (시작 틀의 빈 함수에 9단계에서 추가) |
+| 학생 몫 | 자료실 서버 함수 | `api/notes.js`, `api/session.js`, `api/restore.js`, `api/device.js`, `api/ops.js`, `src/access.mjs`, `src/resources.mjs`, `src/restore-note.mjs`, `src/device-approval.mjs`, `src/ops-summary.mjs` |
+| 학생 몫 | 접속 앱(설치형 웹 화면) | `public/index.html`(시작 틀 화면을 고침), `public/manifest.webmanifest`, `public/icon.svg`, `public/sw.js`, `public/offline.html` |
+| 학생 몫 | 정책 사본·복원 도구, 자기 점검 내용 | `scripts/policy-backup.mjs`, `scripts/policy-diff.mjs`, `scripts/policy-restore.mjs`, `src/policy-snapshot.mjs`, `policy-backups/`, `src/attack-check.mjs`의 단계별 점검 |
+| 시작 틀 (ALEPH 운영 측 제공, 첫 커밋 `6aa304b`) | 로그인 토큰 검증, 연습 시험, 제출 묶음, 계약 문서 | `src/verify-login.mjs`(바꾸지 않음), `scripts/decider-test.mjs`, `scripts/detect-test.mjs`, `scripts/fixture-7.mjs`, `scripts/bundle.mjs`, `scripts/xdr-run.mjs`, `docs/DECIDER_REQUEST.md`, `docs/DETECT_EVENTS.md`, `package/`, `test/`, `AGENTS.md`, `aleph.config.json`의 `judgeIssuer` |
+| 제공 엔진: **ALEPH SDP 엔진 사용** (운영 측, 이 저장소에 없음) | 요청 신원·기기·경로 확인, 판정기 호출(`aleph.decision.v1` 계약), 새 로그인(stepUp) 확인, 탐지 사건 전달과 회수 집행, 심판 판정 | 계약 출처는 `docs/DECIDER_REQUEST.md`에 적힌 `student-kit/sdp-core/decision-contract.mjs`입니다. 엔진 코드·버전·주소는 이 저장소에 없어 적지 않습니다. |
+| 외부 서비스 (학생 계정) | 배포·서버 함수 실행, 로그인·DB | Vercel 프로젝트, Supabase 프로젝트(`identityProvider.issuer`와 같은 프로젝트) |
+
+- `npm run decider:test`·`detect:test`·`fixture:7`는 시작 틀의 가상 요청 연습입니다. 통과해도 ALEPH SDP 엔진의 실제 판정이나 심판 통과가 아닙니다.
+
+### 비밀값을 포장하지 않는 규칙
+
+- Vercel 환경변수 이름만 적습니다: `SUPABASE_URL`, `SUPABASE_SECRET_KEY`(서버 전용 키), `SUPABASE_PUBLISHABLE_KEY`(로그인용 공개 키, 서버 함수만 씀). 값은 Vercel > 프로젝트 > Settings > Environment Variables의 입력란에만 넣고 Git·README·제출 묶음에 넣지 않습니다.
+- Git에 넣지 않는 것: `bundle-notes.json`, `artifacts/`(제출 묶음), `.env`, Supabase SQL 파일(메모 문장·계정 이메일이 들어가므로 학생이 따로 보관), 회귀 확인표 CSV, 비밀번호.
+- 화면·브라우저 저장소에는 키·토큰을 두지 않습니다. 로그인 토큰은 화면 메모리에만, 기기 비밀값은 HttpOnly 쿠키에만 있습니다.
+
+### 네 부분의 설치·실행·중지·복구
+
+명령은 노트북 PowerShell에서 저장소 폴더(`C:\Users\jny\Documents\choi-bujang-secret-vault`)로 이동해 실행합니다. PowerShell은 `npm.ps1`을 막으므로 `npm.cmd`를 씁니다.
+
+**1. 학생 판정기 (`src/decider.mjs`)**
+1. 설치: Node 22 이상 → `git clone https://github.com/nyng-jang/choi-bujang-secret-vault` → `git checkout fd61433`(기준 커밋으로 볼 때) → `npm.cmd install`
+2. 실행: 실제 판정은 ALEPH SDP 엔진이 `decide(request)`를 부를 때만 일어납니다. 학생은 로컬 연습 `npm.cmd run decider:test`(정상: 모두 통과)와 `npm.cmd run fixture:7`로 확인합니다.
+3. 중지: 학생 쪽에 판정기를 끄는 스위치는 없습니다. 엔진의 호출을 멈추는 것은 운영 측 몫입니다. 학생 규칙이 의심되면 아래 복구로 검증한 버전으로 돌립니다(규칙에 걸리지 않는 요청은 `starter.deny`로 거부됨).
+4. 복구: `npm.cmd run policy:diff`로 검증 사본(`policy-backups/verified`, 전체 해시 `226888c1…`)과 비교 → 다르면 `git restore --source fd61433 -- src/decider.mjs` → 커밋·푸시 → 다시 `npm.cmd run decider:test`. 시험용 사본의 복원 순서는 「10단계 복원 절차」를 따릅니다.
+
+**2. 탐지 규칙 (`src/detect.mjs`)**
+1. 설치: 판정기와 같은 저장소·`npm.cmd install`
+2. 실행: `npm.cmd run detect:test`(정상: 6개 통과, 121건 이상만 `propose_revocation`·`burst_read`). 실제 사건 전달과 회수 집행은 ALEPH SDP 엔진 몫이며 이 자료실에는 연결되지 않았습니다(탈환 작전실 「탐지 사건: 미실행」).
+3. 중지: 상시 돌아가는 탐지 프로세스가 없으므로 끌 것이 없습니다. 엔진 쪽 전달 중지는 운영 측 몫입니다.
+4. 복구: `git restore --source fd61433 -- src/detect.mjs` → 커밋·푸시 → `npm.cmd run detect:test`
+
+**3. 접속 앱 (설치형 웹 화면 + 기기 승인)**
+1. 설치: Chrome으로 배포 주소(`publicAppUrl`)를 엽니다 → 주소창 오른쪽 설치 아이콘(또는 ⋮ > 「앱 설치」) → 로그인 → 「이 기기 승인 요청」 → 자료실 주인이 Supabase > SQL Editor에서 화면에 보인 기기 번호의 `pending`을 `approved`로 바꿉니다(SQL은 Git에 없음) → 화면 「상태 다시 확인」.
+2. 실행: 설치한 앱(또는 같은 주소)을 열고 로그인합니다. 「기기 승인: 승인됨」일 때만 메모와 탈환 작전실이 열립니다. 설치 여부는 기기 확인이 아닙니다.
+3. 중지: 이 기기만 막기 → Supabase > SQL Editor에서 그 기기 번호를 `revoked`로 바꿉니다(정상: 그 기기의 `GET /api/notes`가 403 `DEVICE_NOT_APPROVED`). 앱을 지우기 → Chrome 주소창에 `chrome://apps` → 앱 오른쪽 클릭 > 「Chrome에서 삭제」. 앱을 지워도 서버의 기기 승인은 그대로이므로 막으려면 `revoked`가 필요합니다.
+4. 복구: 같은 기기면 SQL Editor에서 `revoked` → `approved`, 새 기기면 설치 1번부터. 화면 코드는 `git restore --source fd61433 -- public/` → 커밋·푸시.
+
+**4. 자료실 (Vercel 배포 + Supabase)**
+1. 설치: Vercel > Add New > Project > 이 GitHub 저장소 Import → Environment Variables에 위 세 이름을 넣고 값은 각자 Supabase 대시보드에서 직접 붙여 넣기 → Deploy. Supabase > SQL Editor에서 학생이 보관한 SQL을 단계 순서로 실행: 메모 표·가상 메모(2단계), `public_id`(3단계), 주인·RLS(4단계), 직접 권한 회수(5단계), 강사 표(8단계), 사본·복원 기록 표(10단계), 기기 승인 표(11단계). 그다음 `npm.cmd run build -- --local`로 빌드만 확인할 수 있습니다(배포 증명 아님).
+2. 실행: `main`에 푸시하면 Vercel이 배포합니다 → Vercel > Deployments에서 Ready 확인 → 화면에서 A·B로 「1~11단계 회귀 확인표」 1부·2부 → CSV 저장. 묶음 자기 점검은 저장소 폴더 맨 위에 `bundle-notes.json`(커밋하지 않음)을 두고 `npm.cmd run bundle`.
+3. 중지(자료 API를 닫기): Vercel > Settings > Environment Variables에서 `SUPABASE_SECRET_KEY`를 지우고 Deployments > 최신 배포 ⋯ > Redeploy. 로그인·메모·복원·기기·작전실 서버 함수가 모두 500 `*_NOT_CONFIGURED`(`SESSION_`·`NOTES_`·`RESTORE_`·`DEVICE_`·`OPS_`)로 닫히고 메모를 돌려주지 않습니다(닫힌 상태로 실패). 화면 파일은 계속 열리지만 자료는 나오지 않습니다.
+4. 복구:
+   1. 배포: Vercel > Deployments에서 커밋 `fd61433` 배포 ⋯ > 「Promote to Production」(또는 Instant Rollback)으로 검사한 배포를 다시 올립니다. 닫았던 경우 `SUPABASE_SECRET_KEY`를 다시 넣고 Redeploy.
+   2. 코드: `git restore --source fd61433 -- <파일>` → 커밋·푸시(`git reset --hard`는 쓰지 않음).
+   3. 메모: B 시험 메모는 「10단계 복원 절차」대로 `POST /api/notes/1cd59ee0-…/restore`(사본 해시 확인 뒤 한 건만). 정책 사본은 `npm.cmd run policy:diff` → `npm.cmd run policy:restore`.
+   4. 확인: 회귀 확인표 1부·2부를 다시 돌려 「기대와 다름 0」을 봅니다. 미실행 줄은 통과가 아닙니다.
+
+### 처음부터 재현하는 순서
+
+1. 노트북에 Node 22 이상과 Git을 준비합니다.
+2. PowerShell: `git clone https://github.com/nyng-jang/choi-bujang-secret-vault` → 폴더로 이동 → `git checkout fd61433` → `npm.cmd install`
+3. PowerShell: `npm.cmd run decider:test` → `npm.cmd run detect:test` → `npm.cmd run policy:diff` (모두 정상이어야 다음으로)
+4. Supabase > SQL Editor: 보관한 SQL을 2→3→4→5→8→10→11단계 순서로 실행합니다.
+5. Vercel: 저장소 Import → 환경변수 세 개 → Deploy → Ready 확인
+6. Chrome: 배포 주소 → 앱 설치 → A 로그인 → 기기 승인 요청 → Supabase에서 승인 → B도 같은 순서
+7. Chrome: 탈환 작전실에서 「불일치」 0 확인 → 회귀 확인표 1부(A) → 로그아웃 → 2부(B) → CSV 저장
+8. PowerShell: `bundle-notes.json`을 폴더 맨 위에 두고 `npm.cmd run bundle` → `artifacts/submission.json`(커밋하지 않음)
+9. 41종 총공세와 심판 판정은 ALEPH SDP 엔진과 심판이 실행합니다. 이 순서로 얻은 결과는 학생 자기 점검입니다.
+
 ## 12단계 진행 중: 1~11단계 회귀 확인표 절차
 
 탈환 작전실(배포 화면 `/`, 로그인하고 기기 승인된 뒤 보임) 아래의 「1~11단계 회귀 확인표」가 정상·금지 요청을 배포된 자료실에 실제로 보내고, 한 표에 단계 / 정상·금지 / 계정 / 요청 / 기대 결과 / 실제 결과(응답 코드·오류 이름) / 요청 ID / 확인 시각 / 판정을 적습니다.

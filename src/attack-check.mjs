@@ -21,14 +21,23 @@ function appUrl(config) {
 // 보내지 않은 점검의 observed 값입니다(쓰기 점검은 실행하지 않으면 not_run).
 const NOT_RUN = 'not_run';
 
+// 실제로 보낸 요청 하나의 결과입니다. 12단계부터 요청 ID(Vercel x-vercel-id)와 확인 시각(보낸 시각, UTC)도 남깁니다.
 async function anonymousGet(app, path, init = {}) {
-  const response = await fetch(new URL(path, app), {
-    ...init, redirect: 'error', signal: AbortSignal.timeout(10000),
-  });
+  const at = new Date().toISOString();
+  const timeout = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+    ? { signal: AbortSignal.timeout(10000) } : {};
+  const response = await fetch(new URL(path, app), { ...init, redirect: 'error', ...timeout });
   const text = await response.text();
   let data = null;
   try { data = JSON.parse(text); } catch { /* not JSON */ }
-  return { status: response.status, text, data };
+  const requestId = response.headers?.get?.('x-vercel-id') ?? null;
+  return { status: response.status, text, data, requestId, at, method: init.method ?? 'GET', path };
+}
+
+// 점검 기록(observed)에 그 점검이 보낸 요청 하나를 그대로 적습니다. 없는 값은 지어내지 않습니다.
+function evidence(res, detail = '') {
+  return `${res.method} ${res.path} → HTTP ${res.status} · 요청 ID ${res.requestId ?? '없음(응답 머리글에 없음)'} · 확인 시각 ${res.at}`
+    + (detail ? ` · ${detail}` : '');
 }
 
 function noteCount(data) {
@@ -382,33 +391,61 @@ async function appChecks(config) {
   ];
 }
 
-// Stage 12: 탈환 작전실(/api/ops) and the 1~11 regression table on the screen.
-// Two real anonymous requests replace two items, keeping the bundle at 20 checks:
-// - cross_owner_note_access (미실행 here) gives its slot to anonymous_ops_request. The B→A
-//   read·update·delete denial was measured with real tokens in the screen's regression table
-//   (2026-11-08, README 「현재 단계: 12단계」), not by this automatic check.
-// - app_manifest_screen becomes app_ops_screen: same manifest checks, plus the 탈환 작전실 and
-//   regression table on the deployed screen, and sessionStorage is counted too (stage-11 judge note).
+// Stage 12 (심판 evidence_rejected 뒤 다시 씀): 점검 하나 = 실제로 보낸 공개 HTTPS GET 하나.
+// 보낸 점검의 observed에는 그 요청의 HTTP 상태·요청 ID(x-vercel-id)·확인 시각과 응답에서 읽은 값만 적습니다.
+// 요청을 보내지 않는 점검(쓰기 요청, 공개 키가 필요한 요청, 로컬 함수 확인)은 observed를 not_run으로 둡니다.
+// 앞 단계 함수를 이어 부르지 않아, 기록에 적히지 않은 요청이 따로 나가지 않습니다.
 async function opsChecks(config) {
-  const checks = (await appChecks(config))
-    .filter(item => item.attackId !== 'cross_owner_note_access' && item.attackId !== 'app_manifest_screen');
   const app = appUrl(config);
+  const errorOf = res => (typeof res.data?.error === 'string' ? res.data.error : '없음');
+  const keyLike = /\bsb_publishable_[A-Za-z0-9_-]{10,}|\beyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/gu;
+
+  const dataJson = await anonymousGet(app, '/data.json');
+  const notes = await anonymousGet(app, '/api/notes');
+  const forged = await anonymousGet(app, '/api/notes', { headers: { Authorization: `Bearer ${unsignedToken(config)}` } });
+  const oneNote = await anonymousGet(app, '/api/notes/00000000-0000-4000-8000-000000000000');
+  const pageForCalls = await anonymousGet(app, '/');
+  const pageForKeys = await anonymousGet(app, '/');
   const ops = await anonymousGet(app, '/api/ops');
-  const page = await anonymousGet(app, '/');
-  const manifest = await anonymousGet(app, '/manifest.webmanifest');
-  const worker = await anonymousGet(app, '/sw.js');
-  const linked = /<link[^>]+rel="manifest"[^>]+href="\/manifest\.webmanifest"/u.test(page.text);
-  const notTrust = page.text.includes('설치 여부는 기기 확인이 아닙니다');
-  const opsRoom = page.text.includes('탈환 작전실') && page.text.includes('/api/ops');
-  const table = page.text.includes('1~11단계 회귀 확인표') && page.text.includes('미실행');
-  const storage = [page, worker].reduce((sum, file) => sum
-    + (file.text.match(/localStorage|sessionStorage|indexedDB|document\.cookie/gu) ?? []).length, 0);
-  const workerApi = /caches?\.(put|add)\([^)]*\/api/u.test(worker.text);
+  const pageForOps = await anonymousGet(app, '/');
+
+  const ok = res => res.status >= 200 && res.status < 300;
+  const dataCount = ok(dataJson) ? noteCount(dataJson.data) : 0;
+  const direct = (pageForCalls.text.match(/\/rest\/v1|\.from\(\s*['"`]notes/gu) ?? []).length;
+  const keys = ok(pageForKeys) ? (pageForKeys.text.match(keyLike) ?? []).length : 0;
+  const t = pageForOps.text;
+  const linked = /<link[^>]+rel="manifest"[^>]+href="\/manifest\.webmanifest"/u.test(t);
+  const storage = (t.match(/localStorage|sessionStorage|indexedDB|document\.cookie/gu) ?? []).length;
+  const has = flag => (flag ? '있음' : '없음');
+
   return [
-    ...checks,
+    { attackId: 'anonymous_static_data_json', expected: '비로그인 /data.json 요청에 가상 메모가 없어야 함',
+      observed: evidence(dataJson, `메모 ${dataCount}건`) },
+    { attackId: 'anonymous_api_notes', expected: '토큰 없는 GET /api/notes는 401 LOGIN_REQUIRED, 메모 0건',
+      observed: evidence(notes, `오류 ${errorOf(notes)}, 메모 ${noteCount(notes.data)}건`) },
+    { attackId: 'forged_token_api_notes', expected: '서명 없는 가짜 토큰의 GET /api/notes는 401 LOGIN_REQUIRED, 메모 0건',
+      observed: evidence(forged, `오류 ${errorOf(forged)}, 메모 ${noteCount(forged.data)}건`) },
+    { attackId: 'anonymous_resource_id', expected: '토큰 없는 GET /api/notes/:id는 401 LOGIN_REQUIRED, X-Resource-Id 머리글 없음',
+      observed: evidence(oneNote, `오류 ${errorOf(oneNote)}`) },
+    { attackId: 'browser_direct_data_calls', expected: '배포된 화면(/) 코드에 Data API 직접 호출(/rest/v1, .from(\'notes\'))이 0곳, 메모는 /api/notes로만',
+      observed: evidence(pageForCalls, `직접 호출 ${direct}곳`) },
+    { attackId: 'browser_public_key_absent', expected: '배포된 화면(/) 코드에 Supabase 공개 키(sb_publishable_·anon 키)가 0개, 로그인은 /api/session',
+      observed: evidence(pageForKeys, `키 형태 값 ${keys}개`) },
     { attackId: 'anonymous_ops_request', expected: '토큰 없는 GET /api/ops(탈환 작전실 요약)는 401 LOGIN_REQUIRED, 판정기·회수·복구 기록을 돌려주지 않음',
-      observed: `HTTP ${ops.status}, 오류 ${typeof ops.data?.error === 'string' ? ops.data.error : '없음'}, 요약 칸 ${ops.data && typeof ops.data === 'object' && 'decider' in ops.data ? '있음' : '없음'}` },
-    { attackId: 'app_ops_screen', expected: '화면(/)이 manifest를 연결하고 「설치 여부는 기기 확인이 아닙니다」·탈환 작전실(/api/ops)·회귀 확인표(미실행 표기)를 담음, 화면·sw.js에 localStorage·sessionStorage·indexedDB·document.cookie 0곳, sw.js가 /api를 저장하지 않음',
-      observed: `/ HTTP ${page.status}, manifest HTTP ${manifest.status}(${manifest.data?.display ?? '-'}), 연결 ${linked ? '있음' : '없음'}, 설치≠확인 문구 ${notTrust ? '있음' : '없음'}, 작전실 ${opsRoom ? '있음' : '없음'}, 회귀 확인표 ${table ? '있음' : '없음'}, 저장소 사용 ${storage}곳, sw /api 저장 ${workerApi ? '있음' : '없음'}` },
+      observed: evidence(ops, `오류 ${errorOf(ops)}, 요약 칸 ${has(ops.data && typeof ops.data === 'object' && 'decider' in ops.data)}`) },
+    { attackId: 'app_ops_screen', expected: '배포된 화면(/)이 manifest를 연결하고 「설치 여부는 기기 확인이 아닙니다」·탈환 작전실(/api/ops)·회귀 확인표를 담고, 화면 코드에 localStorage·sessionStorage·indexedDB·document.cookie 0곳',
+      observed: evidence(pageForOps, `manifest 연결 ${has(linked)}, 설치≠확인 문구 ${has(t.includes('설치 여부는 기기 확인이 아닙니다'))}, 작전실 ${has(t.includes('탈환 작전실') && t.includes('/api/ops'))}, 회귀 확인표 ${has(t.includes('1~11단계 회귀 확인표'))}, 저장소 사용 ${storage}곳`) },
+    { attackId: 'anonymous_api_notes_write', expected: '토큰 없는 POST /api/notes는 401 LOGIN_REQUIRED, 메모가 추가되지 않음', observed: NOT_RUN },
+    { attackId: 'anonymous_api_note_delete', expected: '토큰 없는 DELETE /api/notes/:id는 401 LOGIN_REQUIRED', observed: NOT_RUN },
+    { attackId: 'anonymous_note_restore', expected: '토큰 없는 POST /api/notes/:id/restore는 401 LOGIN_REQUIRED, 메모를 되돌리지 않음', observed: NOT_RUN },
+    { attackId: 'anonymous_device_request', expected: '토큰 없는 POST /api/device(기기 승인 요청)는 401 LOGIN_REQUIRED, 기기 쿠키를 주지 않음', observed: NOT_RUN },
+    { attackId: 'anon_data_api_notes_read', expected: '공개용 키(anon)로 Data API의 notes를 직접 읽으면 권한 없음(42501), 메모 0건', observed: NOT_RUN },
+    { attackId: 'anon_data_api_notes_insert', expected: '공개용 키(anon)로 Data API의 notes에 직접 추가하면 권한 없음(42501), 추가되지 않음', observed: NOT_RUN },
+    { attackId: 'decider_device_registered_local', expected: '로컬 가상 요청(요청을 보내지 않음, 심판 판정 아님): 등록 기기 GET allow, 미등록 기기 deny·device_not_registered', observed: NOT_RUN },
+    { attackId: 'decider_step_up_local', expected: '로컬 가상 요청(요청을 보내지 않음, 심판 판정 아님): 복합 이상 step_up, 새 로그인 뒤 allow', observed: NOT_RUN },
+    { attackId: 'decider_resource_zone_local', expected: '로컬 가상 요청(요청을 보내지 않음, 심판 판정 아님): 메모 한 건 GET allow, 목록·공지 쓰기·강사 자료 deny·resource_zone', observed: NOT_RUN },
+    { attackId: 'api_access_local', expected: '로컬 함수 호출(요청을 보내지 않음, 심판 판정 아님): 남의 메모 not_owner, 강사 권한 없는 공지 쓰기 not_instructor', observed: NOT_RUN },
+    { attackId: 'detect_burst_read', expected: '로컬 가상 사건(요청을 보내지 않음, 실제 회수 아님): 같은 가명 GET 10분 121건 이상만 propose_revocation·burst_read', observed: NOT_RUN },
+    { attackId: 'policy_restore_local', expected: '로컬 사본 확인(요청을 보내지 않음, 심판 판정 아님): 검증한 사본 해시 통과, 운영 판정기·allowedRoutes가 사본과 같음', observed: NOT_RUN },
   ];
 }

@@ -71,11 +71,34 @@ export async function runAttackChecks(config) {
 
 // A token anyone can write: right-looking claims, no valid signature.
 // The server must reject it because it verifies, not just decodes.
-// 12단계: 심판의 격리 환경에는 Node 전용 Buffer가 없으므로 웹 표준 TextEncoder·btoa로 base64url을 만듭니다.
+// 12단계: 심판의 격리 환경에는 Buffer·TextEncoder가 없을 수 있으므로, 실행 환경 도구 없이
+// JavaScript 언어 기능(encodeURIComponent, 문자열·숫자 연산)만으로 UTF-8 바이트와 base64url을 만듭니다.
+const BASE64URL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+
+function utf8Bytes(text) {
+  const bytes = [];
+  const encoded = encodeURIComponent(text);
+  for (let i = 0; i < encoded.length; i += 1) {
+    if (encoded[i] === '%') {
+      bytes.push(parseInt(encoded.slice(i + 1, i + 3), 16));
+      i += 2;
+    } else {
+      bytes.push(encoded.charCodeAt(i));
+    }
+  }
+  return bytes;
+}
+
 function base64url(text) {
-  let binary = '';
-  for (const byte of new TextEncoder().encode(text)) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/gu, '-').replace(/\//gu, '_').replace(/=+$/u, '');
+  const bytes = utf8Bytes(text);
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const n = (bytes[i] << 16) | ((bytes[i + 1] ?? 0) << 8) | (bytes[i + 2] ?? 0);
+    out += BASE64URL[(n >> 18) & 63] + BASE64URL[(n >> 12) & 63];
+    if (i + 1 < bytes.length) out += BASE64URL[(n >> 6) & 63];
+    if (i + 2 < bytes.length) out += BASE64URL[n & 63];
+  }
+  return out;
 }
 
 function unsignedToken(config) {

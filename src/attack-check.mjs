@@ -408,6 +408,7 @@ async function opsChecks(config) {
   const errorOf = res => (typeof res.data?.error === 'string' ? res.data.error : '없음');
   const keyLike = /\bsb_publishable_[A-Za-z0-9_-]{10,}|\beyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/gu;
 
+  const noteRead = await anonymousGet(app, '/data.json', { check: 'anonymous_note_read' });
   const dataJson = await anonymousGet(app, '/data.json', { check: 'anonymous_static_data_json' });
   const notes = await anonymousGet(app, '/api/notes', { check: 'anonymous_api_notes' });
   const forged = await anonymousGet(app, '/api/notes', { check: 'forged_token_api_notes', headers: { Authorization: `Bearer ${unsignedToken(config)}` } });
@@ -451,6 +452,8 @@ async function opsChecks(config) {
   }
 
   return [
+    { attackId: 'anonymous_note_read', expected: '1단계 공격(비로그인 /data.json에서 가상 메모 읽기)이 이제 막혀 확인 표시(sampleMarker)가 보이지 않아야 함',
+      observed: evidence(noteRead, `확인 표시 ${has(noteRead.data?.sampleMarker === config.sampleMarker && noteCount(noteRead.data) > 0)}`) },
     { attackId: 'anonymous_static_data_json', expected: '비로그인 /data.json 요청에 가상 메모가 없어야 함',
       observed: evidence(dataJson, `메모 ${dataCount}건`) },
     { attackId: 'anonymous_api_notes', expected: '토큰 없는 GET /api/notes는 401 LOGIN_REQUIRED, 메모 0건',
@@ -476,7 +479,6 @@ async function opsChecks(config) {
     { attackId: 'decider_device_registered_local', expected: '로컬 가상 요청(요청을 보내지 않음, 심판 판정 아님): 등록 기기 GET allow, 미등록 기기 deny·device_not_registered', observed: NOT_RUN },
     { attackId: 'decider_step_up_local', expected: '로컬 가상 요청(요청을 보내지 않음, 심판 판정 아님): 복합 이상 step_up, 새 로그인 뒤 allow', observed: NOT_RUN },
     { attackId: 'decider_resource_zone_local', expected: '로컬 가상 요청(요청을 보내지 않음, 심판 판정 아님): 메모 한 건 GET allow, 목록·공지 쓰기·강사 자료 deny·resource_zone', observed: NOT_RUN },
-    { attackId: 'api_access_local', expected: '로컬 함수 호출(요청을 보내지 않음, 심판 판정 아님): 남의 메모 not_owner, 강사 권한 없는 공지 쓰기 not_instructor', observed: NOT_RUN },
     { attackId: 'detect_burst_read', expected: '로컬 가상 사건(요청을 보내지 않음, 실제 회수 아님): 같은 가명 GET 10분 121건 이상만 propose_revocation·burst_read', observed: NOT_RUN },
     { attackId: 'policy_restore_local', expected: '로컬 사본 확인(요청을 보내지 않음, 심판 판정 아님): 검증한 사본 해시 통과, 운영 판정기·allowedRoutes가 사본과 같음', observed: NOT_RUN },
   ];

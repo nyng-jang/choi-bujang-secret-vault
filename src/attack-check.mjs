@@ -50,6 +50,7 @@ export async function runAttackChecks(config) {
   if (config.step === 9) return detectChecks(config);
   if (config.step === 10) return restoreChecks(config);
   if (config.step === 11) return appChecks(config);
+  if (config.step === 12) return opsChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
   const oldFile = await anonymousGet(app, '/data.json');
@@ -370,5 +371,36 @@ async function appChecks(config) {
       observed: `HTTP ${device.status}, 오류 ${deviceError}, Set-Cookie ${cookie ? '있음' : '없음'}` },
     { attackId: 'app_manifest_screen', expected: '화면(/)이 manifest를 연결하고 「설치 여부는 기기 확인이 아닙니다」를 표시, 화면·sw.js에 localStorage·indexedDB·document.cookie 0곳, sw.js가 /api를 저장하지 않음',
       observed: `/ HTTP ${page.status}, manifest HTTP ${manifest.status}(이름 ${manifest.data?.short_name ?? '없음'}, ${manifest.data?.display ?? '-'}), 연결 ${linked ? '있음' : '없음'}, 설치≠확인 문구 ${notTrust ? '있음' : '없음'}, 저장소 사용 ${storage}곳, sw /api 저장 ${workerApi ? '있음' : '없음'}` },
+  ];
+}
+
+// Stage 12: 탈환 작전실(/api/ops) and the 1~11 regression table on the screen.
+// Two real anonymous requests replace two items, keeping the bundle at 20 checks:
+// - cross_owner_note_access (미실행 here) gives its slot to anonymous_ops_request. The B→A
+//   read·update·delete denial was measured with real tokens in the screen's regression table
+//   (2026-11-08, README 「현재 단계: 12단계」), not by this automatic check.
+// - app_manifest_screen becomes app_ops_screen: same manifest checks, plus the 탈환 작전실 and
+//   regression table on the deployed screen, and sessionStorage is counted too (stage-11 judge note).
+async function opsChecks(config) {
+  const checks = (await appChecks(config))
+    .filter(item => item.attackId !== 'cross_owner_note_access' && item.attackId !== 'app_manifest_screen');
+  const app = appUrl(config);
+  const ops = await anonymousGet(app, '/api/ops');
+  const page = await anonymousGet(app, '/');
+  const manifest = await anonymousGet(app, '/manifest.webmanifest');
+  const worker = await anonymousGet(app, '/sw.js');
+  const linked = /<link[^>]+rel="manifest"[^>]+href="\/manifest\.webmanifest"/u.test(page.text);
+  const notTrust = page.text.includes('설치 여부는 기기 확인이 아닙니다');
+  const opsRoom = page.text.includes('탈환 작전실') && page.text.includes('/api/ops');
+  const table = page.text.includes('1~11단계 회귀 확인표') && page.text.includes('미실행');
+  const storage = [page, worker].reduce((sum, file) => sum
+    + (file.text.match(/localStorage|sessionStorage|indexedDB|document\.cookie/gu) ?? []).length, 0);
+  const workerApi = /caches?\.(put|add)\([^)]*\/api/u.test(worker.text);
+  return [
+    ...checks,
+    { attackId: 'anonymous_ops_request', expected: '토큰 없는 GET /api/ops(탈환 작전실 요약)는 401 LOGIN_REQUIRED, 판정기·회수·복구 기록을 돌려주지 않음',
+      observed: `HTTP ${ops.status}, 오류 ${typeof ops.data?.error === 'string' ? ops.data.error : '없음'}, 요약 칸 ${ops.data && typeof ops.data === 'object' && 'decider' in ops.data ? '있음' : '없음'}` },
+    { attackId: 'app_ops_screen', expected: '화면(/)이 manifest를 연결하고 「설치 여부는 기기 확인이 아닙니다」·탈환 작전실(/api/ops)·회귀 확인표(미실행 표기)를 담음, 화면·sw.js에 localStorage·sessionStorage·indexedDB·document.cookie 0곳, sw.js가 /api를 저장하지 않음',
+      observed: `/ HTTP ${page.status}, manifest HTTP ${manifest.status}(${manifest.data?.display ?? '-'}), 연결 ${linked ? '있음' : '없음'}, 설치≠확인 문구 ${notTrust ? '있음' : '없음'}, 작전실 ${opsRoom ? '있음' : '없음'}, 회귀 확인표 ${table ? '있음' : '없음'}, 저장소 사용 ${storage}곳, sw /api 저장 ${workerApi ? '있음' : '없음'}` },
   ];
 }

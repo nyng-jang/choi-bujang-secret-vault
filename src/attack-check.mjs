@@ -38,7 +38,8 @@ async function anonymousGet(app, path, init = {}) {
   try { data = JSON.parse(text); } catch { /* not JSON */ }
   const at = new Date().toISOString(); // 확인 시각: 응답을 다 받은 시각(UTC)
   const requestId = response.headers?.get?.('x-vercel-id') ?? null;
-  return { status: response.status, text, data, requestId, at, method: init.method ?? 'GET', path, url, check };
+  return { status: response.status, text, data, requestId, at, method: init.method ?? 'GET', path, url, check,
+    responseHeaders: response.headers };
 }
 
 // 점검 기록(observed)에 그 점검이 보낸 요청 하나를 그대로 적습니다. 없는 값은 지어내지 않습니다.
@@ -75,9 +76,9 @@ export async function runAttackChecks(config) {
   if (config.step === 12) return opsChecks(config);
   if (config.step !== 2) throw new Error('이 단계의 공격 점검을 src/attack-check.mjs에 구현해 주세요.');
   const app = appUrl(config);
-  const oldFile = await anonymousGet(app, '/data.json');
+  const oldFile = await anonymousGet(app, '/data.json', { check: 'anonymous_static_data_json' });
   const oldCount = oldFile.status >= 200 && oldFile.status < 300 ? noteCount(oldFile.data) : 0;
-  const api = await anonymousGet(app, '/api/notes');
+  const api = await anonymousGet(app, '/api/notes', { check: 'anonymous_api_notes' });
   const apiCount = api.status >= 200 && api.status < 300 ? noteCount(api.data) : 0;
   const leaked = SECRET_LIKE.test(api.text) ? ', 응답에 키 형태 값 있음' : ', 응답에 키 형태 값 없음';
   return [
@@ -131,10 +132,10 @@ function unsignedToken(config) {
 
 async function loginChecks(config) {
   const app = appUrl(config);
-  const oldFile = await anonymousGet(app, '/data.json');
+  const oldFile = await anonymousGet(app, '/data.json', { check: 'anonymous_static_data_json' });
   const oldCount = oldFile.status >= 200 && oldFile.status < 300 ? noteCount(oldFile.data) : 0;
-  const read = await anonymousGet(app, '/api/notes');
-  const forged = await anonymousGet(app, '/api/notes', {
+  const read = await anonymousGet(app, '/api/notes', { check: 'anonymous_api_notes' });
+  const forged = await anonymousGet(app, '/api/notes', { check: 'forged_token_api_notes',
     headers: { Authorization: `Bearer ${unsignedToken(config)}` },
   });
   // 12단계: 자기 점검은 공개 HTTPS GET·HEAD만 보냅니다. 쓰기(POST·DELETE) 점검은 보내지 않고 not_run으로 남깁니다.
@@ -165,14 +166,14 @@ async function loginChecks(config) {
 async function ownerChecks(config) {
   const checks = (await loginChecks(config)).filter(item => item.attackId !== 'logged_in_note_crud');
   const app = appUrl(config);
-  const login = await anonymousGet(app, '/login-config.json');
+  const login = await anonymousGet(app, '/login-config.json', { check: 'anon_data_api_notes_read' });
   const key = process.env.SUPABASE_PUBLISHABLE_KEY?.trim() || login.data?.publishableKey;
   const dataApi = new URL(config.originalApiUrl
     ?? new URL('/rest/v1/notes', new URL(config.identityProvider.issuer).origin));
   let read = null;
   if (typeof key === 'string' && key.startsWith('sb_publishable_')) {
     const headers = { apikey: key };
-    read = await anonymousGet(dataApi, `${dataApi.pathname}?select=public_id`, { headers });
+    read = await anonymousGet(dataApi, `${dataApi.pathname}?select=public_id`, { check: 'anon_data_api_notes_read', headers });
   }
   const result = res => res === null
     ? `미실행: 공개용 키 없음 (/login-config.json HTTP ${login.status}, SUPABASE_PUBLISHABLE_KEY 미설정)`
@@ -197,10 +198,10 @@ async function ownerChecks(config) {
 async function serverOnlyChecks(config) {
   const checks = await ownerChecks(config);
   const app = appUrl(config);
-  const page = await anonymousGet(app, '/');
+  const page = await anonymousGet(app, '/', { check: 'browser_direct_data_calls' });
   const direct = (page.text.match(/\/rest\/v1|\.from\(\s*['"`]notes/gu) ?? []).length;
   // Bonus: no Supabase key anywhere the screen loads from.
-  const files = [page, await anonymousGet(app, '/login-config.json'), await anonymousGet(app, '/vendor/supabase.js')];
+  const files = [page, await anonymousGet(app, '/login-config.json', { check: 'browser_public_key_absent' }), await anonymousGet(app, '/vendor/supabase.js', { check: 'browser_public_key_absent' })];
   const keyLike = /\bsb_publishable_[A-Za-z0-9_-]{10,}|\beyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/gu;
   const keys = files.reduce((sum, file) => sum + (file.status >= 200 && file.status < 300
     ? (file.text.match(keyLike) ?? []).length : 0), 0);
@@ -270,13 +271,11 @@ async function stepUpChecks(config) {
 async function zoneChecks(config) {
   const checks = await stepUpChecks(config);
   const app = appUrl(config);
-  const probe = await fetch(new URL('/api/notes/00000000-0000-4000-8000-000000000000', app), {
-    redirect: 'error', signal: AbortSignal.timeout(10000),
-  });
-  const probeBody = await probe.text();
+  const probe = await anonymousGet(app, '/api/notes/00000000-0000-4000-8000-000000000000', { check: 'anonymous_resource_id' });
+  const probeBody = probe.text;
   let probeError = '없음';
   try { probeError = JSON.parse(probeBody)?.error ?? '없음'; } catch { /* not JSON */ }
-  const leakedId = probe.headers.get('x-resource-id');
+  const leakedId = probe.responseHeaders?.get?.('x-resource-id') ?? null;
 
   const { decide } = await import('./decider.mjs');
   const { fixtureRequests } = await import('../scripts/fixture-7.mjs');
@@ -383,9 +382,9 @@ async function appChecks(config) {
   const checks = (await restoreChecks(config)).filter(item => !dropped.has(item.attackId));
   const app = appUrl(config);
 
-  const page = await anonymousGet(app, '/');
-  const manifest = await anonymousGet(app, '/manifest.webmanifest');
-  const worker = await anonymousGet(app, '/sw.js');
+  const page = await anonymousGet(app, '/', { check: 'app_manifest_screen' });
+  const manifest = await anonymousGet(app, '/manifest.webmanifest', { check: 'app_manifest_screen' });
+  const worker = await anonymousGet(app, '/sw.js', { check: 'app_manifest_screen' });
   const linked = /<link[^>]+rel="manifest"[^>]+href="\/manifest\.webmanifest"/u.test(page.text);
   const notTrust = page.text.includes('설치 여부는 기기 확인이 아닙니다');
   const storage = [page, worker].reduce((sum, file) => sum
@@ -459,7 +458,7 @@ async function opsChecks(config) {
     { attackId: 'forged_token_api_notes', expected: '서명 없는 가짜 토큰의 GET /api/notes는 401 LOGIN_REQUIRED, 메모 0건',
       observed: evidence(forged, `오류 ${errorOf(forged)}, 메모 ${noteCount(forged.data)}건`) },
     { attackId: 'anonymous_resource_id', expected: '토큰 없는 GET /api/notes/:id는 401 LOGIN_REQUIRED, X-Resource-Id 머리글 없음',
-      observed: evidence(oneNote, `오류 ${errorOf(oneNote)}`) },
+      observed: evidence(oneNote, `오류 ${errorOf(oneNote)}, X-Resource-Id ${has(oneNote.responseHeaders?.get?.('x-resource-id'))}`) },
     { attackId: 'browser_direct_data_calls', expected: '배포된 화면(/) 코드에 Data API 직접 호출(/rest/v1, .from(\'notes\'))이 0곳, 메모는 /api/notes로만',
       observed: evidence(pageForCalls, `직접 호출 ${direct}곳`) },
     { attackId: 'browser_public_key_absent', expected: '배포된 화면(/) 코드에 Supabase 공개 키(sb_publishable_·anon 키)가 0개, 로그인은 /api/session',

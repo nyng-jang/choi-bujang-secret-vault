@@ -29,9 +29,9 @@ async function anonymousGet(app, path, init = {}) {
   init = rest;
   const timeout = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? { signal: AbortSignal.timeout(10000) } : {};
-  const target = new URL(path, app);
-  if (check) target.searchParams.set('attackId', check);
-  const url = target.href; // 문자열 주소로 보내고, 같은 주소를 기록에 적습니다.
+  // 심판 격리 환경의 URL에는 searchParams가 없을 수 있어, 쿼리는 문자열로 붙입니다.
+  const withCheck = check ? `${path}${path.includes('?') ? '&' : '?'}attackId=${encodeURIComponent(check)}` : path;
+  const url = new URL(withCheck, app).href; // 문자열 주소로 보내고, 같은 주소를 기록에 적습니다.
   const response = await fetch(url, { ...init, redirect: 'error', ...timeout });
   const text = await response.text();
   let data = null;

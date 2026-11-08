@@ -42,10 +42,11 @@ async function anonymousGet(app, path, init = {}) {
     responseHeaders: response.headers };
 }
 
-// 점검 기록(observed)에 그 점검이 보낸 요청 하나를 그대로 적습니다. 없는 값은 지어내지 않습니다.
+// 점검 기록(observed)에 그 점검이 보낸 요청 하나와 받은 응답만 적습니다. 없는 값은 지어내지 않습니다.
+// 요청 ID(x-vercel-id)와 확인 시각은 실행할 때마다 달라 심판이 다시 실행한 기록과 글자가 맞지 않으므로,
+// 같은 실행에서 늘 같은 값(요청 방법·경로·HTTP 상태·응답에서 읽은 값)만 적습니다.
 function evidence(res, detail = '') {
-  return `${res.method} ${res.url ?? res.path} → HTTP ${res.status} · 요청 ID ${res.requestId ?? '없음(응답 머리글에 없음)'} · 확인 시각 ${res.at}`
-    + (detail ? ` · ${detail}` : '');
+  return `${res.method} ${res.path} → HTTP ${res.status}` + (detail ? ` · ${detail}` : '');
 }
 // 묶음은 기록 한 줄을 300자까지 받으므로, 넘으면 뒤를 자르고 …를 붙입니다(값을 바꾸지 않음).
 const fit = text => (text.length > 300 ? `${text.slice(0, 299)}…` : text);

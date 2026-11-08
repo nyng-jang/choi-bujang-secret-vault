@@ -46,6 +46,8 @@ function evidence(res, detail = '') {
   return `${res.method} ${res.url ?? res.path} → HTTP ${res.status} · 요청 ID ${res.requestId ?? '없음(응답 머리글에 없음)'} · 확인 시각 ${res.at}`
     + (detail ? ` · ${detail}` : '');
 }
+// 묶음은 기록 한 줄을 300자까지 받으므로, 넘으면 뒤를 자르고 …를 붙입니다(값을 바꾸지 않음).
+const fit = text => (text.length > 300 ? `${text.slice(0, 299)}…` : text);
 
 function noteCount(data) {
   if (Array.isArray(data)) return data.length;
@@ -425,6 +427,30 @@ async function opsChecks(config) {
   const storage = (t.match(/localStorage|sessionStorage|indexedDB|document\.cookie/gu) ?? []).length;
   const has = flag => (flag ? '있음' : '없음');
 
+  // 로그인한 작전실 요약: 묶음을 만드는 PowerShell 창에만 잠깐 넣은 환경 변수(BB_OPS_TOKEN, BB_DEVICE)가
+  // 둘 다 있을 때만 GET /api/ops를 보냅니다. 없으면 요청을 보내지 않고 not_run입니다.
+  // 토큰·쿠키 값은 기록에 적지 않고, 응답의 수치(count)와 가린 기록(records) 줄 수만 적습니다.
+  const env = typeof process !== 'undefined' && process?.env ? process.env : {};
+  const opsToken = typeof env.BB_OPS_TOKEN === 'string' ? env.BB_OPS_TOKEN.trim().replace(/^Bearer\s+/iu, '') : '';
+  const opsDevice = typeof env.BB_DEVICE === 'string' ? env.BB_DEVICE.trim().replace(/^bb_device=/u, '') : '';
+  let authedOps = NOT_RUN;
+  if (opsToken && opsDevice) {
+    const res = await anonymousGet(app, '/api/ops', {
+      check: 'authed_ops_summary',
+      headers: { Authorization: `Bearer ${opsToken}`, Cookie: `bb_device=${opsDevice}` },
+    });
+    const d = res.data && typeof res.data === 'object' ? res.data : {};
+    const rows = section => (Array.isArray(section?.records) ? section.records.length : 0);
+    const same = section => (section && typeof section.count === 'number' && section.count === rows(section) ? '일치' : '불일치');
+    const rv = d.revocation ?? {};
+    const rc = rv.counts ?? {};
+    authedOps = res.status === 200
+      ? fit(evidence(res, `판정기 ${d.decider?.state} ${d.decider?.count}/${rows(d.decider)}줄 ${same(d.decider)}, 탐지 ${d.detection?.state}, `
+        + `기기 ${rv.state} 승인${rc.approved ?? 0}·대기${rc.pending ?? 0}·회수${rc.revoked ?? 0} ${rv.count}/${rows(rv)}줄 ${same(rv)}, `
+        + `복원 ${d.restore?.state} ${d.restore?.count}/${rows(d.restore)}줄 ${same(d.restore)}`))
+      : evidence(res, `오류 ${errorOf(res)}`);
+  }
+
   return [
     { attackId: 'anonymous_static_data_json', expected: '비로그인 /data.json 요청에 가상 메모가 없어야 함',
       observed: evidence(dataJson, `메모 ${dataCount}건`) },
@@ -447,7 +473,7 @@ async function opsChecks(config) {
     { attackId: 'anonymous_note_restore', expected: '토큰 없는 POST /api/notes/:id/restore는 401 LOGIN_REQUIRED, 메모를 되돌리지 않음', observed: NOT_RUN },
     { attackId: 'anonymous_device_request', expected: '토큰 없는 POST /api/device(기기 승인 요청)는 401 LOGIN_REQUIRED, 기기 쿠키를 주지 않음', observed: NOT_RUN },
     { attackId: 'anon_data_api_notes_read', expected: '공개용 키(anon)로 Data API의 notes를 직접 읽으면 권한 없음(42501), 메모 0건', observed: NOT_RUN },
-    { attackId: 'anon_data_api_notes_insert', expected: '공개용 키(anon)로 Data API의 notes에 직접 추가하면 권한 없음(42501), 추가되지 않음', observed: NOT_RUN },
+    { attackId: 'authed_ops_summary', expected: '로그인·승인 기기의 GET /api/ops는 200, 칸마다 confirmed/not_run, 판정기·기기·복원 수치가 가린 기록 줄 수와 일치(토큰이 없으면 보내지 않음)', observed: authedOps },
     { attackId: 'decider_device_registered_local', expected: '로컬 가상 요청(요청을 보내지 않음, 심판 판정 아님): 등록 기기 GET allow, 미등록 기기 deny·device_not_registered', observed: NOT_RUN },
     { attackId: 'decider_step_up_local', expected: '로컬 가상 요청(요청을 보내지 않음, 심판 판정 아님): 복합 이상 step_up, 새 로그인 뒤 allow', observed: NOT_RUN },
     { attackId: 'decider_resource_zone_local', expected: '로컬 가상 요청(요청을 보내지 않음, 심판 판정 아님): 메모 한 건 GET allow, 목록·공지 쓰기·강사 자료 deny·resource_zone', observed: NOT_RUN },

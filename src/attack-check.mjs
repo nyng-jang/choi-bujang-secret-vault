@@ -21,18 +21,18 @@ function appUrl(config) {
 // 보내지 않은 점검의 observed 값입니다(쓰기 점검은 실행하지 않으면 not_run).
 const NOT_RUN = 'not_run';
 
-// 실제로 보낸 요청 하나의 결과입니다. 12단계부터 요청 ID(Vercel x-vercel-id)와 확인 시각(응답을 받은 시각, UTC)도 남깁니다.
-// init.check(점검 이름)가 있으면 주소의 ?attackId= 로 함께 보냅니다. 머리글은 요청 기록에 남지 않을 수 있지만
-// 주소는 어느 요청 기록에나 남으므로, 심판 쪽 기록에서 점검과 요청을 짝지을 수 있습니다.
+// 실제로 보낸 요청 하나의 결과입니다.
+// init.check(점검 이름 = attackId)가 있으면 fetch 옵션 alephEvidence { caseId, requestKey }로 넘깁니다.
+// 심판 runner는 이 값으로 요청을 사례(attackId)와 연결해 응답을 따로 관측합니다(ALEPH 통과 표본과 같은 방식).
+// 이 값은 요청 머리글이나 주소에 넣지 않으며, 보통 Node fetch는 모르는 옵션이라 무시합니다.
 async function anonymousGet(app, path, init = {}) {
-  const { check, ...rest } = init;
+  const { check, requestKey = 'read', ...rest } = init;
   init = rest;
   const timeout = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? { signal: AbortSignal.timeout(10000) } : {};
-  // 심판 격리 환경의 URL에는 searchParams가 없을 수 있어, 쿼리는 문자열로 붙입니다.
-  const withCheck = check ? `${path}${path.includes('?') ? '&' : '?'}attackId=${encodeURIComponent(check)}` : path;
-  const url = new URL(withCheck, app).href; // 문자열 주소로 보내고, 같은 주소를 기록에 적습니다.
-  const response = await fetch(url, { ...init, redirect: 'error', ...timeout });
+  const url = new URL(path, app).href;
+  const evidenceLink = check ? { alephEvidence: { caseId: check, requestKey } } : {};
+  const response = await fetch(url, { ...init, redirect: 'error', ...timeout, ...evidenceLink });
   const text = await response.text();
   let data = null;
   try { data = JSON.parse(text); } catch { /* not JSON */ }
@@ -167,7 +167,7 @@ async function loginChecks(config) {
 async function ownerChecks(config) {
   const checks = (await loginChecks(config)).filter(item => item.attackId !== 'logged_in_note_crud');
   const app = appUrl(config);
-  const login = await anonymousGet(app, '/login-config.json', { check: 'anon_data_api_notes_read' });
+  const login = await anonymousGet(app, '/login-config.json', { check: 'anon_data_api_notes_read', requestKey: 'login-config' });
   const key = process.env.SUPABASE_PUBLISHABLE_KEY?.trim() || login.data?.publishableKey;
   const dataApi = new URL(config.originalApiUrl
     ?? new URL('/rest/v1/notes', new URL(config.identityProvider.issuer).origin));
@@ -202,7 +202,7 @@ async function serverOnlyChecks(config) {
   const page = await anonymousGet(app, '/', { check: 'browser_direct_data_calls' });
   const direct = (page.text.match(/\/rest\/v1|\.from\(\s*['"`]notes/gu) ?? []).length;
   // Bonus: no Supabase key anywhere the screen loads from.
-  const files = [page, await anonymousGet(app, '/login-config.json', { check: 'browser_public_key_absent' }), await anonymousGet(app, '/vendor/supabase.js', { check: 'browser_public_key_absent' })];
+  const files = [page, await anonymousGet(app, '/login-config.json', { check: 'browser_public_key_absent', requestKey: 'login-config' }), await anonymousGet(app, '/vendor/supabase.js', { check: 'browser_public_key_absent', requestKey: 'vendor' })];
   const keyLike = /\bsb_publishable_[A-Za-z0-9_-]{10,}|\beyJ[A-Za-z0-9_-]{12,}\.eyJ[A-Za-z0-9_-]{12,}/gu;
   const keys = files.reduce((sum, file) => sum + (file.status >= 200 && file.status < 300
     ? (file.text.match(keyLike) ?? []).length : 0), 0);
@@ -384,8 +384,8 @@ async function appChecks(config) {
   const app = appUrl(config);
 
   const page = await anonymousGet(app, '/', { check: 'app_manifest_screen' });
-  const manifest = await anonymousGet(app, '/manifest.webmanifest', { check: 'app_manifest_screen' });
-  const worker = await anonymousGet(app, '/sw.js', { check: 'app_manifest_screen' });
+  const manifest = await anonymousGet(app, '/manifest.webmanifest', { check: 'app_manifest_screen', requestKey: 'manifest' });
+  const worker = await anonymousGet(app, '/sw.js', { check: 'app_manifest_screen', requestKey: 'worker' });
   const linked = /<link[^>]+rel="manifest"[^>]+href="\/manifest\.webmanifest"/u.test(page.text);
   const notTrust = page.text.includes('설치 여부는 기기 확인이 아닙니다');
   const storage = [page, worker].reduce((sum, file) => sum

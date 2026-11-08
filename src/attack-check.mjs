@@ -22,14 +22,16 @@ function appUrl(config) {
 const NOT_RUN = 'not_run';
 
 // 실제로 보낸 요청 하나의 결과입니다. 12단계부터 요청 ID(Vercel x-vercel-id)와 확인 시각(응답을 받은 시각, UTC)도 남깁니다.
-// init.check(점검 이름)가 있으면 X-Aleph-Check 머리글로 함께 보내, 심판 쪽 요청 기록에서 점검과 요청을 짝지을 수 있게 합니다.
+// init.check(점검 이름)가 있으면 주소의 ?attackId= 로 함께 보냅니다. 머리글은 요청 기록에 남지 않을 수 있지만
+// 주소는 어느 요청 기록에나 남으므로, 심판 쪽 기록에서 점검과 요청을 짝지을 수 있습니다.
 async function anonymousGet(app, path, init = {}) {
   const { check, ...rest } = init;
-  if (check) rest.headers = { ...(rest.headers ?? {}), 'X-Aleph-Check': check };
   init = rest;
   const timeout = typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
     ? { signal: AbortSignal.timeout(10000) } : {};
-  const url = new URL(path, app).href; // 문자열 주소로 보내고, 같은 주소를 기록에 적습니다.
+  const target = new URL(path, app);
+  if (check) target.searchParams.set('attackId', check);
+  const url = target.href; // 문자열 주소로 보내고, 같은 주소를 기록에 적습니다.
   const response = await fetch(url, { ...init, redirect: 'error', ...timeout });
   const text = await response.text();
   let data = null;
@@ -41,7 +43,7 @@ async function anonymousGet(app, path, init = {}) {
 
 // 점검 기록(observed)에 그 점검이 보낸 요청 하나를 그대로 적습니다. 없는 값은 지어내지 않습니다.
 function evidence(res, detail = '') {
-  return `${res.check ? `[${res.check}] ` : ''}${res.method} ${res.url ?? res.path} → HTTP ${res.status} · 요청 ID ${res.requestId ?? '없음(응답 머리글에 없음)'} · 확인 시각 ${res.at}`
+  return `${res.method} ${res.url ?? res.path} → HTTP ${res.status} · 요청 ID ${res.requestId ?? '없음(응답 머리글에 없음)'} · 확인 시각 ${res.at}`
     + (detail ? ` · ${detail}` : '');
 }
 
